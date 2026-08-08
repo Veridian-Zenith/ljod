@@ -9,12 +9,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MusicDao {
-
     @Query("SELECT * FROM songs ORDER BY title ASC")
-    fun getAllSongs(): Flow<List<Song>>
+    fun getAll(): Flow<List<Song>>
 
     @Query("SELECT * FROM songs WHERE id = :id")
-    suspend fun getSongById(id: Long): Song?
+    suspend fun getById(id: Long): Song?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(songs: List<Song>)

@@ -1,4 +1,4 @@
-package dev.vz.ljod.ui.screens.library
+package dev.vz.ljod.ui.library
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,7 +10,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.vz.ljod.ui.theme.TextSecondary
 
 @Composable
 fun LibraryScreen(padding: PaddingValues) {
@@ -21,14 +20,7 @@ fun LibraryScreen(padding: PaddingValues) {
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.Top,
     ) {
-        Text(
-            text = "Library",
-            style = MaterialTheme.typography.headlineLarge,
-        )
-        Text(
-            text = "Your music, forged in silence.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = TextSecondary,
-        )
+        Text("Library", style = MaterialTheme.typography.headlineLarge)
+        Text("Your music, forged in silence.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
