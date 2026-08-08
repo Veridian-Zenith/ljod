@@ -1,0 +1,27 @@
+# Built artifacts
+build/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Gradle
+.gradle/
+local.properties
+*.hprof
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+generated/
+lint-baseline.xml

@@ -1,0 +1,69 @@
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+complexity:
+  LongMethod:
+    threshold: 60
+    active: true
+  LongParameterList:
+    functionThreshold: 6
+    constructorThreshold: 7
+    active: true
+  TooManyFunctions:
+    thresholdInFiles: 25
+    thresholdInClasses: 25
+    active: true
+  ComplexMethod:
+    threshold: 15
+    active: true
+  LargeClass:
+    threshold: 600
+    active: true
+
+style:
+  MaxLineLength:
+    maxLineLength: 120
+    active: true
+  MagicNumber:
+    active: true
+    ignoreAnnotated: ['Preview']
+    ignoreRanges: true
+  ReturnCount:
+    max: 3
+    active: true
+  ForbiddenComment:
+    active: true
+    values: 'TODO:,FIXME:,HACK:,XXX:'
+
+naming:
+  FunctionNaming:
+    active: true
+    functionPattern: '[a-zA-Z][a-zA-Z0-9_]*'
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Za-z][_A-Za-z0-9]*'
+  ClassNaming:
+    active: true
+
+empty-blocks:
+  EmptyFunctionBlock:
+    active: true
+    ignoreOverridden: true
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: true
+  TooGenericExceptionThrown:
+    active: true
+
+formatting:
+  NoWildcardImports:
+    active: true
+  NoBlankLineInList:
+    active: true
+  NoConsecutiveBlankLines:
+    active: true
+  FinalNewline:
+    active: true
+    insertFinalNewline: true

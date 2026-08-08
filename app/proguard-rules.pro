@@ -1,0 +1,3 @@
+-dontwarn javax.annotation.**
+-keep class dev.indevs.ljod.data.model.** { *; }
+-keep class dev.indevs.ljod.playback.PlaybackService { *; }
