@@ -15,11 +15,11 @@ detekt {
 }
 
 android {
-    namespace = "dev.indevs.ljod"
+    namespace = "dev.vz.ljod"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.indevs.ljod"
+        applicationId = "dev.vz.ljod"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
