@@ -1,4 +1,4 @@
-package dev.vz.ljod.ui.screens.settings
+package dev.vz.ljod.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,10 +10,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.vz.ljod.ui.theme.TextSecondary
+import dev.vz.ljod.core.ui.theme.LjodPalettes
 
 @Composable
-fun SettingsScreen(padding: PaddingValues) {
+fun HomeScreen(padding: PaddingValues) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -21,14 +21,7 @@ fun SettingsScreen(padding: PaddingValues) {
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.Top,
     ) {
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.headlineLarge,
-        )
-        Text(
-            text = "Configure the forge.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = TextSecondary,
-        )
+        Text("Veridian Zenith", style = MaterialTheme.typography.headlineLarge, color = LjodPalettes.Nordic.accent)
+        Text("Forge your sound.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

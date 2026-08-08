@@ -6,7 +6,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import dev.vz.ljod.playback.PlaybackConnection
+import dev.vz.ljod.core.data.scanner.MediaScanner
+import dev.vz.ljod.playback.PlaybackController
+import dev.vz.ljod.playback.PlaybackService
 import javax.inject.Singleton
 
 @Module
@@ -15,9 +17,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePlaybackConnection(
-        @ApplicationContext context: Context
-    ): PlaybackConnection {
-        return PlaybackConnection(context)
-    }
+    fun provideMediaScanner(@ApplicationContext context: Context): MediaScanner = MediaScanner(context)
+
+    @Provides
+    @Singleton
+    fun providePlaybackController(@ApplicationContext context: Context): PlaybackController =
+        PlaybackController(context, PlaybackService::class.java)
 }
