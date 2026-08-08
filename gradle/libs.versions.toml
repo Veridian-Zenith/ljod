@@ -1,15 +1,15 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.1.0"
-ksp = "2.1.0-1.0.29"
-hilt = "2.53.1"
-compose-bom = "2024.12.01"
+agp = "9.3.1"
+kotlin = "2.4.10"
+ksp = "2.3.11"
+hilt = "2.60.1"
+compose-bom = "2026.06.01"
 media3 = "1.5.1"
 coil = "2.7.0"
-kotlinx-serialization = "1.7.3"
-lifecycle = "2.8.7"
+kotlinx-serialization = "1.11.0"
+lifecycle = "2.11.0"
 navigation = "2.8.5"
-room = "2.6.1"
+room = "2.8.4"
 timber = "5.0.1"
 
 [libraries]
@@ -24,8 +24,8 @@ compose-material-icons = { group = "androidx.compose.material", name = "material
 compose-animation = { group = "androidx.compose.animation", name = "animation" }
 
 # AndroidX
-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.15.0" }
-activity-compose = { group = "androidx.activity", name = "activity-compose", version = "1.9.3" }
+core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.19.0" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version = "1.13.0" }
 lifecycle-runtime = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 lifecycle-viewmodel = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 
@@ -41,7 +41,7 @@ media3-common = { group = "androidx.media3", name = "media3-common", version.ref
 # DI
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
-hilt-navigation = { group = "androidx.hilt", name = "hilt-navigation-compose", version = "1.2.0" }
+hilt-navigation = { group = "androidx.hilt", name = "hilt-navigation-compose", version = "1.4.0" }
 
 # Image loading
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
