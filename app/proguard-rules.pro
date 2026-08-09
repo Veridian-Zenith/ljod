@@ -1,3 +1,3 @@
 -dontwarn javax.annotation.**
--keep class dev.indevs.ljod.data.model.** { *; }
--keep class dev.indevs.ljod.playback.PlaybackService { *; }
+-keep class dev.vz.ljod.data.model.** { *; }
+-keep class dev.vz.ljod.playback.PlaybackService { *; }

@@ -6,18 +6,15 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-val LocalLjodPalette = staticCompositionLocalOf { LjodPalettes.Nordic }
+val LocalLjodPalette = staticCompositionLocalOf { NordicPalette }
 
 @Composable
-fun LjodTheme(
-    palette: LjodPalette = LjodPalettes.Nordic,
-    content: @Composable () -> Unit
-) {
+fun LjodTheme(content: @Composable () -> Unit) {
+    val palette = NordicPalette
     val scheme = darkColorScheme(
         primary = palette.accent,
         onPrimary = palette.bg,

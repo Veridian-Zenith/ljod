@@ -1,14 +1,12 @@
 package dev.vz.ljod.core.ui.theme
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-
-// ============================================================
-// Veridian Zenith — Nordic Void palettes
-// Extracted from vzdev.indevs.in. 4 switchable atmospheres.
-// ============================================================
 
 data class LjodPalette(
     val accent: Color,
+    val accent2: Color,
+    val accent3: Color,
     val accentMuted: Color,
     val accentDim: Color,
     val glow: Color,
@@ -23,78 +21,111 @@ data class LjodPalette(
     val textPrimary: Color,
     val textSecondary: Color,
     val error: Color,
+    val glassHighlight: Color,
+    val glassBorder: Color,
 )
 
-object LjodPalettes {
-    val Nordic = LjodPalette(
-        accent = Color(0xFFFFB347),
-        accentMuted = Color(0x99FFB347),
-        accentDim = Color(0x33FFB347),
-        glow = Color(0xCCFFB347),
-        gradient1 = Color(0xFFFFB347),
-        gradient2 = Color(0xFFD72638),
-        gradient3 = Color(0xFFFFB347),
-        bg = Color(0xFF050200),
-        surface = Color(0xFF0F0A05),
-        surfaceHigh = Color(0xFF1A1208),
-        surfaceHighest = Color(0xFF251C0E),
-        border = Color(0x33FFB347),
-        textPrimary = Color(0xFFF3F4F6),
-        textSecondary = Color(0xFFD1D5DB),
-        error = Color(0xFFEF4444),
+val NordicPalette = LjodPalette(
+    accent = Color(0xFFFFB347),
+    accent2 = Color(0xFFE85D75),
+    accent3 = Color(0xFF7C6BFF),
+    accentMuted = Color(0x99FFB347),
+    accentDim = Color(0x33FFB347),
+    glow = Color(0xCCFFB347),
+    gradient1 = Color(0xFFFFB347),
+    gradient2 = Color(0xFFE85D75),
+    gradient3 = Color(0xFF7C6BFF),
+    bg = Color(0xFF050200),
+    surface = Color(0xFF0F0A05),
+    surfaceHigh = Color(0xFF1A1208),
+    surfaceHighest = Color(0xFF251C0E),
+    border = Color(0x33FFB347),
+    textPrimary = Color(0xFFF3F4F6),
+    textSecondary = Color(0xFF9CA3AF),
+    error = Color(0xFFEF4444),
+    glassHighlight = Color(0x15FFFFFF),
+    glassBorder = Color(0x33FFFFFF),
+)
+
+object GlassStyle {
+    val verticalGradient = Brush.verticalGradient(
+        listOf(
+            Color(0x25FFFFFF),
+            Color(0x10FFFFFF),
+        ),
     )
 
-    val Midnight = LjodPalette(
-        accent = Color(0xFF818CF8),
-        accentMuted = Color(0x99818CF8),
-        accentDim = Color(0x338B5CF6),
-        glow = Color(0xCC8B5CF6),
-        gradient1 = Color(0xFF818CF8),
-        gradient2 = Color(0xFFC084FC),
-        gradient3 = Color(0xFF818CF8),
-        bg = Color(0xFF020008),
-        surface = Color(0xFF0C0A1F),
-        surfaceHigh = Color(0xFF161330),
-        surfaceHighest = Color(0xFF1F1B3E),
-        border = Color(0x338B5CF6),
-        textPrimary = Color(0xFFF3F4F6),
-        textSecondary = Color(0xFFA78BFA),
-        error = Color(0xFFEF4444),
+    val accentGradient = Brush.verticalGradient(
+        listOf(
+            NordicPalette.accent.copy(alpha = 0.3f),
+            NordicPalette.accent.copy(alpha = 0.1f),
+        ),
     )
 
-    val BloodMoon = LjodPalette(
-        accent = Color(0xFFEF4444),
-        accentMuted = Color(0x99EF4444),
-        accentDim = Color(0x33DC2626),
-        glow = Color(0xCCDC2626),
-        gradient1 = Color(0xFFEF4444),
-        gradient2 = Color(0xFF7F1D1D),
-        gradient3 = Color(0xFFEF4444),
-        bg = Color(0xFF080000),
-        surface = Color(0xFF1A0808),
-        surfaceHigh = Color(0xFF260C0C),
-        surfaceHighest = Color(0xFF331212),
-        border = Color(0x33DC2626),
-        textPrimary = Color(0xFFF3F4F6),
-        textSecondary = Color(0xFFF87171),
-        error = Color(0xFFEF4444),
+    val surfaceGradient = Brush.verticalGradient(
+        listOf(
+            NordicPalette.surfaceHighest,
+            NordicPalette.surfaceHigh,
+        ),
     )
 
-    val Golden = LjodPalette(
-        accent = Color(0xFFFFD700),
-        accentMuted = Color(0x99FFD700),
-        accentDim = Color(0x4DFFD700),
-        glow = Color(0xCCFFD700),
-        gradient1 = Color(0xFFFFD700),
-        gradient2 = Color(0xFFB45309),
-        gradient3 = Color(0xFFFFD700),
-        bg = Color(0xFF0A0800),
-        surface = Color(0xFF1A1205),
-        surfaceHigh = Color(0xFF261C08),
-        surfaceHighest = Color(0xFF33260C),
-        border = Color(0x4DFFD700),
-        textPrimary = Color(0xFFF3F4F6),
-        textSecondary = Color(0xFFE6C895),
-        error = Color(0xFFEF4444),
+    val chipGradient = Brush.verticalGradient(
+        listOf(
+            Color(0x30FFB347),
+            Color(0x12FFB347),
+        ),
+    )
+
+    val heroGradient = Brush.horizontalGradient(
+        listOf(
+            NordicPalette.accent.copy(alpha = 0.18f),
+            NordicPalette.gradient2.copy(alpha = 0.12f),
+            NordicPalette.gradient3.copy(alpha = 0.08f),
+            NordicPalette.surface,
+        ),
+    )
+
+    val cardWarm = Brush.horizontalGradient(
+        listOf(
+            NordicPalette.accent.copy(alpha = 0.15f),
+            NordicPalette.surfaceHigh,
+        ),
+    )
+
+    val cardCool = Brush.horizontalGradient(
+        listOf(
+            NordicPalette.gradient3.copy(alpha = 0.12f),
+            NordicPalette.surfaceHigh,
+        ),
+    )
+
+    val miniPlayerGradient = Brush.verticalGradient(
+        listOf(
+            NordicPalette.accent.copy(alpha = 0.12f),
+            NordicPalette.surfaceHighest,
+            NordicPalette.surfaceHigh,
+        ),
+    )
+
+    val bottomBarGradient = Brush.verticalGradient(
+        listOf(
+            NordicPalette.surfaceHighest,
+            NordicPalette.surface,
+        ),
+    )
+
+    val activeTabGradient = Brush.verticalGradient(
+        listOf(
+            NordicPalette.accent.copy(alpha = 0.2f),
+            NordicPalette.accent.copy(alpha = 0.05f),
+        ),
+    )
+
+    val warmBorderGlow = Brush.horizontalGradient(
+        listOf(
+            NordicPalette.accent.copy(alpha = 0.4f),
+            NordicPalette.gradient2.copy(alpha = 0.2f),
+            Color.Transparent,
+        ),
     )
 }

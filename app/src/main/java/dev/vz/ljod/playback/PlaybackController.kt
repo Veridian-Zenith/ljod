@@ -8,15 +8,22 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
-class PlaybackController(context: Context, serviceClass: Class<*>) {
+class PlaybackController(private val context: Context, private val serviceClass: Class<*>) {
 
-    private val controllerFuture: ListenableFuture<MediaController>
+    private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
+    private val scope = CoroutineScope(Dispatchers.Main)
+    private var positionJob: Job? = null
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
@@ -39,11 +46,12 @@ class PlaybackController(context: Context, serviceClass: Class<*>) {
     private val _mediaItems = MutableStateFlow<List<MediaItem>>(emptyList())
     val mediaItems: StateFlow<List<MediaItem>> = _mediaItems.asStateFlow()
 
-    init {
-        val token = SessionToken.Builder(context, ComponentName(context, serviceClass)).build()
+    private fun ensureConnected() {
+        if (controllerFuture != null) return
+        val token = SessionToken(context, ComponentName(context, serviceClass))
         controllerFuture = MediaController.Builder(context, token).buildAsync()
-        controllerFuture.addListener({
-            controller = controllerFuture.get()
+        controllerFuture!!.addListener({
+            controller = controllerFuture!!.get()
             _isConnected.value = true
             controller?.addListener(listener)
             Timber.d("PlaybackController connected")
@@ -53,6 +61,7 @@ class PlaybackController(context: Context, serviceClass: Class<*>) {
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
+            if (playing) startPositionUpdates() else stopPositionUpdates()
         }
 
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
@@ -68,7 +77,28 @@ class PlaybackController(context: Context, serviceClass: Class<*>) {
         }
     }
 
-    fun play() { controller?.play() }
+    private fun startPositionUpdates() {
+        stopPositionUpdates()
+        positionJob = scope.launch {
+            while (true) {
+                controller?.let { c ->
+                    _position.value = c.currentPosition.coerceAtLeast(0)
+                }
+                delay(250)
+            }
+        }
+    }
+
+    private fun stopPositionUpdates() {
+        positionJob?.cancel()
+        positionJob = null
+    }
+
+    fun play() {
+        ensureConnected()
+        controller?.play()
+    }
+
     fun pause() { controller?.pause() }
     fun togglePlayPause() { if (_isPlaying.value) pause() else play() }
     fun seekTo(position: Long) { controller?.seekTo(position) }
@@ -76,12 +106,14 @@ class PlaybackController(context: Context, serviceClass: Class<*>) {
     fun skipToPrevious() { controller?.seekToPrevious() }
 
     fun setMediaItems(items: List<MediaItem>, startIndex: Int = 0) {
+        ensureConnected()
         controller?.setMediaItems(items, startIndex, 0)
         _mediaItems.value = items
     }
 
     fun release() {
+        stopPositionUpdates()
         controller?.removeListener(listener)
-        MediaController.releaseFuture(controllerFuture)
+        controllerFuture?.let { MediaController.releaseFuture(it) }
     }
 }

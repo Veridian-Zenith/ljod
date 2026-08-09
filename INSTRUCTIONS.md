@@ -48,14 +48,11 @@ dev.vz.ljod/
 
 ## Design System — Nordic Void
 
-4 switchable palettes extracted from `vzdev.indevs.in`:
+Single palette extracted from `vzdev.indevs.in`:
 
-| Palette | Accent | Background | Glow |
-|---------|--------|------------|------|
-| Nordic (default) | `#FFB347` amber | `#050200` near-black | `#CCFFB347` |
-| Midnight | `#818CF8` indigo | `#020008` void | `#CC8B5CF6` |
-| Blood Moon | `#EF4444` red | `#080000` dark red | `#CCDC2626` |
-| Golden | `#FFD700` gold | `#0A0800` dark amber | `#CCFFD700` |
+| Accent | Background | Glow |
+|--------|------------|------|
+| `#FFB347` amber | `#050200` near-black | `#CCFFB347` |
 
 Access in Compose: `LjodTheme.palette.accent`
 
@@ -140,8 +137,8 @@ Access in Compose: `LjodTheme.palette.accent`
 3. Add vector icon to `res/drawable/`
 
 ### Add a new palette
-1. Add `LjodPalette(...)` to `LjodPalettes` in `core/ui/theme/Palette.kt`
-2. Reference via `LjodPalettes.YourName`
+1. Add `LjodPalette(...)` to `core/ui/theme/Palette.kt`
+2. Reference via your palette name
 
 ### Add a new dependency
 1. Add to `gradle/libs.versions.toml`
