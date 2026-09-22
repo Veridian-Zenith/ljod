@@ -1,16 +1,13 @@
 package dev.vz.ljod.ui.lyrics
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -18,7 +15,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +31,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
@@ -62,16 +57,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.vz.ljod.core.ui.theme.GlassStyle
-import dev.vz.ljod.core.ui.theme.NordicPalette
+import dev.vz.ljod.core.ui.glass.GlassButton
+import dev.vz.ljod.core.ui.glass.GlassChip
+import dev.vz.ljod.core.ui.glass.GlassIconButton
+import dev.vz.ljod.core.ui.glass.GlassSurface
+import dev.vz.ljod.core.ui.glass.GlassTone
+import dev.vz.ljod.core.ui.theme.LjodDimens
+import dev.vz.ljod.core.ui.theme.LjodTheme
 import dev.vz.ljod.data.lyrics.LyricsResult
 import dev.vz.ljod.playback.PlaybackController
 
-private val LANGUAGES = listOf(
-    "English", "Spanish", "French", "German", "Italian",
-    "Portuguese", "Japanese", "Korean", "Chinese",
-    "Russian", "Arabic", "Hindi", "Turkish", "Dutch",
-)
+private val LANGUAGES =
+    listOf(
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Portuguese",
+        "Japanese",
+        "Korean",
+        "Chinese",
+        "Russian",
+        "Arabic",
+        "Hindi",
+        "Turkish",
+        "Dutch",
+    )
 
 @Composable
 fun LyricsScreen(
@@ -89,6 +101,7 @@ fun LyricsScreen(
     onSetTargetLanguage: (String) -> Unit = {},
     onBack: () -> Unit = {},
 ) {
+    val palette = LjodTheme.palette
     val position by controller.position.collectAsState()
     val listState = rememberLazyListState()
     var activeLine by remember { mutableIntStateOf(0) }
@@ -104,60 +117,42 @@ fun LyricsScreen(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NordicPalette.bg)
-            .padding(horizontal = 18.dp, vertical = 10.dp),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(palette.bg)
+                .padding(horizontal = 18.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.AutoMirrored.Rounded.ArrowBack,
+            GlassIconButton(
+                icon = Icons.AutoMirrored.Rounded.ArrowBack,
                 contentDescription = "Back",
-                tint = NordicPalette.accent,
-                modifier = Modifier
-                    .size(30.dp)
-                    .shadow(6.dp, RoundedCornerShape(10.dp))
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(GlassStyle.accentGradient)
-                    .border(1.dp, NordicPalette.accent.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                    .clickable(onClick = onBack)
-                    .padding(5.dp),
+                onClick = onBack,
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 "Lyrics",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = NordicPalette.accent,
+                color = palette.accent,
             )
             if (lyrics != null) {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     lyrics.source,
                     style = MaterialTheme.typography.labelSmall,
-                    color = NordicPalette.textSecondary.copy(alpha = 0.5f),
+                    color = palette.textSecondary.copy(alpha = 0.6f),
                 )
             }
             Spacer(Modifier.weight(1f))
-            Icon(
-                Icons.Rounded.Settings,
+            GlassIconButton(
+                icon = Icons.Rounded.Settings,
                 contentDescription = "Settings",
-                tint = if (showSettings) NordicPalette.accent else NordicPalette.textSecondary,
-                modifier = Modifier
-                    .size(28.dp)
-                    .shadow(6.dp, RoundedCornerShape(10.dp))
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (showSettings) GlassStyle.accentGradient else GlassStyle.verticalGradient)
-                    .border(
-                        1.dp,
-                        if (showSettings) NordicPalette.accent.copy(alpha = 0.4f) else NordicPalette.glassBorder,
-                        RoundedCornerShape(10.dp),
-                    )
-                    .clickable { showSettings = !showSettings }
-                    .padding(5.dp),
+                onClick = { showSettings = !showSettings },
+                tone = if (showSettings) GlassTone.Accent else GlassTone.Subtle,
             )
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
 
         AnimatedVisibility(
             visible = showSettings,
@@ -172,7 +167,7 @@ fun LyricsScreen(
             )
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         LyricsActionRow(lyrics, isTranslating, isRomanizing, onSearchLyrics, onTranslate, onRomanize, onGenerateWithAI)
         Spacer(Modifier.height(8.dp))
 
@@ -198,7 +193,7 @@ fun LyricsScreen(
                 Text(
                     "No lyrics found",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = NordicPalette.textSecondary,
+                    color = palette.textSecondary,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -213,115 +208,138 @@ private fun LyricsSettingsPanel(
     onToggleRomanization: (Boolean) -> Unit,
     onSetTargetLanguage: (String) -> Unit,
 ) {
+    val palette = LjodTheme.palette
     var showLangPicker by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(12.dp, RoundedCornerShape(16.dp), ambientColor = NordicPalette.accent.copy(alpha = 0.1f))
-            .clip(RoundedCornerShape(16.dp))
-            .background(GlassStyle.surfaceGradient)
-            .border(1.dp, NordicPalette.glassBorder, RoundedCornerShape(16.dp))
-            .padding(12.dp),
+    GlassSurface(
+        tone = GlassTone.Subtle,
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = LjodDimens.radiusLg,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(GlassStyle.verticalGradient)
-                .clickable { onToggleRomanization(!romanizationEnabled) }
-                .padding(vertical = 8.dp, horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Romanization",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                    color = NordicPalette.textPrimary,
-                )
-                Text(
-                    "Pinyin, Romaji, etc. below original",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NordicPalette.textSecondary,
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .shadow(4.dp, RoundedCornerShape(8.dp))
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            if (romanizationEnabled) listOf(NordicPalette.accent, NordicPalette.gradient2)
-                            else listOf(NordicPalette.surface, NordicPalette.surfaceHigh),
-                        ),
-                    )
-                    .border(1.dp, NordicPalette.glassBorder, RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center,
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(
+                            LjodDimens.radiusMd.let {
+                                androidx.compose.foundation.shape
+                                    .RoundedCornerShape(it)
+                            },
+                        ).background(Brush.verticalGradient(listOf(palette.surfaceHigh, palette.surface)))
+                        .clickable { onToggleRomanization(!romanizationEnabled) }
+                        .padding(vertical = 8.dp, horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (romanizationEnabled) {
-                    Icon(Icons.Rounded.Check, contentDescription = null, tint = NordicPalette.bg, modifier = Modifier.size(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Romanization",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = palette.textPrimary,
+                    )
+                    Text("Pinyin, Romaji, etc. below original", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
+                }
+                Box(
+                    modifier =
+                        Modifier
+                            .size(30.dp)
+                            .shadow(
+                                4.dp,
+                                LjodDimens.radiusSm.let {
+                                    androidx.compose.foundation.shape
+                                        .RoundedCornerShape(it)
+                                },
+                            ).clip(
+                                LjodDimens.radiusSm.let {
+                                    androidx.compose.foundation.shape
+                                        .RoundedCornerShape(it)
+                                },
+                            ).background(
+                                Brush.verticalGradient(
+                                    if (romanizationEnabled) {
+                                        listOf(palette.accent, palette.accentDeep)
+                                    } else {
+                                        listOf(palette.surface, palette.surfaceHigh)
+                                    },
+                                ),
+                            ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (romanizationEnabled) {
+                        Icon(Icons.Rounded.Check, contentDescription = null, tint = palette.onAccent, modifier = Modifier.size(16.dp))
+                    }
                 }
             }
-        }
-
-        Spacer(Modifier.height(6.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(GlassStyle.verticalGradient)
-                .clickable { showLangPicker = !showLangPicker }
-                .padding(vertical = 8.dp, horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(
+                            LjodDimens.radiusMd.let {
+                                androidx.compose.foundation.shape
+                                    .RoundedCornerShape(it)
+                            },
+                        ).background(Brush.verticalGradient(listOf(palette.surfaceHigh, palette.surface)))
+                        .clickable { showLangPicker = !showLangPicker }
+                        .padding(vertical = 8.dp, horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Translate to",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = palette.textPrimary,
+                    )
+                    Text(targetLanguage, style = MaterialTheme.typography.labelSmall, color = palette.accent)
+                }
                 Text(
-                    "Translate to",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                    color = NordicPalette.textPrimary,
+                    if (showLangPicker) "▲" else "▼",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.textSecondary,
                 )
-                Text(targetLanguage, style = MaterialTheme.typography.labelSmall, color = NordicPalette.accent)
             }
-            Text(
-                if (showLangPicker) "▲" else "▼",
-                style = MaterialTheme.typography.labelSmall,
-                color = NordicPalette.textSecondary,
-            )
-        }
-
-        AnimatedVisibility(
-            visible = showLangPicker,
-            enter = expandVertically(tween(200)) + fadeIn(tween(150)),
-            exit = shrinkVertically(tween(150)) + fadeOut(tween(100)),
-        ) {
-            Column(modifier = Modifier.padding(top = 6.dp)) {
-                LANGUAGES.forEach { lang ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (lang == targetLanguage) GlassStyle.accentGradient else GlassStyle.verticalGradient,
+            AnimatedVisibility(
+                visible = showLangPicker,
+                enter = expandVertically(tween(200)) + fadeIn(tween(150)),
+                exit = shrinkVertically(tween(150)) + fadeOut(tween(100)),
+            ) {
+                Column(modifier = Modifier.padding(top = 6.dp)) {
+                    LANGUAGES.forEach { lang ->
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(
+                                        LjodDimens.radiusSm.let {
+                                            androidx.compose.foundation.shape
+                                                .RoundedCornerShape(it)
+                                        },
+                                    ).background(
+                                        if (lang ==
+                                            targetLanguage
+                                        ) {
+                                            Brush.verticalGradient(
+                                                listOf(palette.accent.copy(alpha = 0.4f), palette.accent.copy(alpha = 0.1f)),
+                                            )
+                                        } else {
+                                            Brush.verticalGradient(listOf(palette.surfaceHigh, palette.surface))
+                                        },
+                                    ).clickable {
+                                        onSetTargetLanguage(lang)
+                                        showLangPicker = false
+                                    }.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                lang,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (lang == targetLanguage) palette.accent else palette.textPrimary,
                             )
-                            .border(
-                                1.dp,
-                                if (lang == targetLanguage) NordicPalette.accent.copy(alpha = 0.2f) else NordicPalette.glassBorder,
-                                RoundedCornerShape(8.dp),
-                            )
-                            .clickable { onSetTargetLanguage(lang); showLangPicker = false }
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            lang,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (lang == targetLanguage) NordicPalette.accent else NordicPalette.textPrimary,
-                        )
-                        if (lang == targetLanguage) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(Icons.Rounded.Check, contentDescription = null, tint = NordicPalette.accent, modifier = Modifier.size(12.dp))
+                            if (lang == targetLanguage) {
+                                Spacer(Modifier.weight(1f))
+                                Icon(Icons.Rounded.Check, contentDescription = null, tint = palette.accent, modifier = Modifier.size(12.dp))
+                            }
                         }
                     }
                 }
@@ -341,19 +359,22 @@ private fun LyricsActionRow(
     onGenerateWithAI: () -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        GlassChip("SEARCH", enabled = true, onClick = onSearchLyrics)
-        GlassChip(
-            "TRANSLATE",
+        GlassButton(text = "SEARCH", compact = true, onClick = onSearchLyrics, tone = GlassTone.Subtle)
+        GlassButton(
+            text = "TRANSLATE",
+            compact = true,
             enabled = !isTranslating && !isRomanizing && lyrics != null && lyrics.lines.isNotEmpty(),
             onClick = onTranslate,
         )
-        GlassChip(
-            "ROMANIZE",
+        GlassButton(
+            text = "ROMANIZE",
+            compact = true,
             enabled = !isTranslating && !isRomanizing && lyrics != null && lyrics.lines.isNotEmpty(),
             onClick = onRomanize,
         )
-        GlassChip(
-            "AI GEN",
+        GlassButton(
+            text = "AI GEN",
+            compact = true,
             enabled = !isTranslating && !isRomanizing && (lyrics == null || lyrics.lines.isEmpty()),
             onClick = onGenerateWithAI,
         )
@@ -361,49 +382,32 @@ private fun LyricsActionRow(
 }
 
 @Composable
-private fun GlassChip(label: String, enabled: Boolean, onClick: () -> Unit) {
-    val infTransition = rememberInfiniteTransition(label = "chip")
-    val glowAlpha by infTransition.animateFloat(
-        initialValue = 0.0f,
-        targetValue = if (enabled) 0.2f else 0f,
-        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Reverse),
-        label = "glow",
-    )
-
-    Text(
-        label,
-        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-        color = if (enabled) NordicPalette.accent else NordicPalette.textSecondary.copy(alpha = 0.4f),
-        modifier = Modifier
-            .shadow(8.dp, RoundedCornerShape(10.dp), ambientColor = NordicPalette.accent.copy(alpha = glowAlpha))
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (enabled) GlassStyle.chipGradient else GlassStyle.verticalGradient,
-            )
-            .border(
-                1.dp,
-                if (enabled) NordicPalette.accent.copy(alpha = 0.35f) else NordicPalette.glassBorder,
-                RoundedCornerShape(10.dp),
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-    )
-}
-
-@Composable
 private fun LoadingIndicator() {
+    val palette = LjodTheme.palette
+    val inf = rememberInfiniteTransition(label = "load")
+    val alpha by inf.animateFloat(0.3f, 1f, infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Reverse), label = "a")
+    val scale by inf.animateFloat(
+        0.9f,
+        1.1f,
+        infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "s",
+    )
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            val inf = rememberInfiniteTransition(label = "load")
-            val alpha by inf.animateFloat(0.3f, 1f, infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Reverse), label = "a")
-            val scale by inf.animateFloat(0.9f, 1.1f, infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "s")
             CircularProgressIndicator(
-                color = NordicPalette.accent,
-                modifier = Modifier.size(26.dp).graphicsLayer { this.alpha = alpha; scaleX = scale; scaleY = scale },
+                color = palette.accent,
+                modifier =
+                    Modifier
+                        .size(26.dp)
+                        .graphicsLayer {
+                            this.alpha = alpha
+                            scaleX = scale
+                            scaleY = scale
+                        },
                 strokeWidth = 2.dp,
             )
             Spacer(Modifier.height(6.dp))
-            Text("Working...", style = MaterialTheme.typography.labelSmall, color = NordicPalette.textSecondary)
+            Text("Working...", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
         }
     }
 }
@@ -414,6 +418,7 @@ private fun SyncedLyricsList(
     activeLine: Int,
     listState: androidx.compose.foundation.lazy.LazyListState,
 ) {
+    val palette = LjodTheme.palette
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(vertical = 12.dp),
@@ -422,49 +427,60 @@ private fun SyncedLyricsList(
         itemsIndexed(lyrics.lines) { index, line ->
             val isActive = index == activeLine && lyrics.isSynced
             val hasAny = line.romanized != null || line.translated != null
-
-            val mainColor by animateColorAsState(
-                targetValue = if (isActive) NordicPalette.accent else NordicPalette.textSecondary.copy(alpha = 0.6f),
-                animationSpec = tween(300), label = "mc",
+            val mainColor by animateFloatAsState(
+                targetValue = if (isActive) 1f else 0.6f,
+                animationSpec = tween(300),
+                label = "mc",
             )
             val bgAlpha by animateFloatAsState(
                 targetValue = if (isActive) 0.12f else 0f,
-                animationSpec = tween(300), label = "ba",
+                animationSpec = tween(300),
+                label = "ba",
             )
             val scale by animateFloatAsState(
                 targetValue = if (isActive) 1.01f else 1f,
-                animationSpec = spring(stiffness = Spring.StiffnessLow), label = "sc",
+                animationSpec = tween(300),
+                label = "sc",
             )
             val glowAlpha by animateFloatAsState(
-                targetValue = if (isActive) 0.15f else 0f,
-                animationSpec = tween(400), label = "ga",
+                targetValue = if (isActive) 0.2f else 0f,
+                animationSpec = tween(400),
+                label = "ga",
             )
 
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                    .shadow(
-                        if (isActive) 10.dp else 0.dp,
-                        RoundedCornerShape(10.dp),
-                        ambientColor = NordicPalette.accent.copy(alpha = glowAlpha),
-                        spotColor = NordicPalette.accent.copy(alpha = glowAlpha),
-                    )
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                NordicPalette.accent.copy(alpha = bgAlpha),
-                                NordicPalette.gradient2.copy(alpha = bgAlpha * 0.5f),
-                                NordicPalette.bg.copy(alpha = 0f),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        }.shadow(
+                            if (isActive) 10.dp else 0.dp,
+                            LjodDimens.radiusMd.let {
+                                androidx.compose.foundation.shape
+                                    .RoundedCornerShape(it)
+                            },
+                            ambientColor = palette.accent.copy(alpha = glowAlpha),
+                            spotColor = palette.accent.copy(alpha = glowAlpha),
+                        ).clip(
+                            LjodDimens.radiusMd.let {
+                                androidx.compose.foundation.shape
+                                    .RoundedCornerShape(it)
+                            },
+                        ).background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    palette.accent.copy(alpha = bgAlpha),
+                                    palette.accentDeep.copy(alpha = bgAlpha * 0.5f),
+                                    palette.bg.copy(alpha = 0f),
+                                ),
                             ),
-                        ),
-                    )
-                    .padding(horizontal = 10.dp, vertical = if (hasAny) 6.dp else 3.dp),
+                        ).padding(horizontal = 10.dp, vertical = if (hasAny) 6.dp else 3.dp),
             ) {
                 Text(
                     text = line.text,
-                    color = mainColor,
+                    color = palette.textPrimary.copy(alpha = mainColor.coerceAtLeast(0.5f)),
                     fontSize = if (isActive) 17.sp else 13.sp,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = if (lyrics.isSynced) TextAlign.Center else TextAlign.Start,
@@ -473,7 +489,7 @@ private fun SyncedLyricsList(
                 if (line.romanized != null) {
                     Text(
                         text = line.romanized,
-                        color = NordicPalette.accent2.copy(alpha = 0.7f),
+                        color = palette.accentMuted.copy(alpha = 0.7f),
                         fontSize = if (isActive) 11.sp else 10.sp,
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = if (lyrics.isSynced) TextAlign.Center else TextAlign.Start,
@@ -483,7 +499,7 @@ private fun SyncedLyricsList(
                 if (line.translated != null) {
                     Text(
                         text = line.translated,
-                        color = NordicPalette.accent3.copy(alpha = 0.8f),
+                        color = palette.accentHot.copy(alpha = 0.8f),
                         fontSize = if (isActive) 11.sp else 10.sp,
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = if (lyrics.isSynced) TextAlign.Center else TextAlign.Start,

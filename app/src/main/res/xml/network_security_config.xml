@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config>
+        <domain includeSubdomains="true">generativelanguage.googleapis.com</domain>
+        <pin-set expiration="2027-01-01">
+            <pin digest="SHA-256">M8HztCzM3elUxkcjR2S5JV0TSpj5MBc8G0cDj0aBvX8=</pin>
+            <pin digest="SHA-256">YLh1dUR9y6Kja30RrAn7JKnbQG/uEtLMkBgFF2Fuihg=</pin>
+        </pin-set>
+    </domain-config>
+    <domain-config>
+        <domain includeSubdomains="true">lrclib.net</domain>
+    </domain-config>
+</network-security-config>

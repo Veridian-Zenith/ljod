@@ -42,17 +42,18 @@ fun ScreenHost(
                         onClick = { current = s.key },
                         icon = { Icon(s.icon, contentDescription = s.label) },
                         label = { Text(s.label) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
-                        )
+                        colors =
+                            NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
                     )
                 }
             }
-        }
+        },
     ) { padding ->
         screen.content(padding)
     }

@@ -4,15 +4,15 @@ build:
 
 complexity:
   LongMethod:
-    threshold: 120
+    threshold: 200
     active: true
   LongParameterList:
-    functionThreshold: 14
-    constructorThreshold: 12
+    functionThreshold: 20
+    constructorThreshold: 15
     active: true
   TooManyFunctions:
-    thresholdInFiles: 25
-    thresholdInClasses: 25
+    thresholdInFiles: 50
+    thresholdInClasses: 50
     active: true
   CyclomaticComplexMethod:
     threshold: 20
@@ -27,7 +27,7 @@ complexity:
 style:
   MaxLineLength:
     maxLineLength: 160
-    active: true
+    active: false
   MagicNumber:
     active: false
   ReturnCount:

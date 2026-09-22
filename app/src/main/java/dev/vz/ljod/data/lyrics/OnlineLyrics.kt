@@ -22,31 +22,39 @@ data class LrcLibResponse(
 )
 
 class OnlineLyricsSource {
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val client =
+        OkHttpClient
+            .Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build()
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun fetchLyrics(title: String, artist: String, durationMs: Long? = null): LyricsResult? {
+    suspend fun fetchLyrics(
+        title: String,
+        artist: String,
+        durationMs: Long? = null,
+    ): LyricsResult? {
         return withContext(Dispatchers.IO) {
             try {
                 val durationSec = durationMs?.let { it / 1000.0 }
 
-                val urlBuilder = StringBuilder("https://lrclib.net/api/search?")
-                    .append("track_name=${java.net.URLEncoder.encode(title, "UTF-8")}")
-                    .append("&artist_name=${java.net.URLEncoder.encode(artist, "UTF-8")}")
+                val urlBuilder =
+                    StringBuilder("https://lrclib.net/api/search?")
+                        .append("track_name=${java.net.URLEncoder.encode(title, "UTF-8")}")
+                        .append("&artist_name=${java.net.URLEncoder.encode(artist, "UTF-8")}")
 
                 if (durationSec != null) {
                     urlBuilder.append("&duration=${durationSec.toInt()}")
                 }
 
-                val request = Request.Builder()
-                    .url(urlBuilder.toString())
-                    .header("User-Agent", "Ljod/0.1.0 (https://github.com/Veridian-Zenith/ljod)")
-                    .build()
+                val request =
+                    Request
+                        .Builder()
+                        .url(urlBuilder.toString())
+                        .header("User-Agent", "Ljod/0.1.0 (https://github.com/Veridian-Zenith/ljod)")
+                        .build()
 
                 val response = client.newCall(request).execute()
                 if (!response.isSuccessful) {
@@ -65,8 +73,11 @@ class OnlineLyricsSource {
                     val lines = parseSyncedLyrics(syncedLyrics)
                     LyricsResult(lines = lines, source = "lrclib.net", isSynced = true)
                 } else if (!plainLyrics.isNullOrBlank()) {
-                    val lines = plainLyrics.lines().filter { it.isNotBlank() }
-                        .map { LyricsLine(timeMs = 0, text = it) }
+                    val lines =
+                        plainLyrics
+                            .lines()
+                            .filter { it.isNotBlank() }
+                            .map { LyricsLine(timeMs = 0, text = it) }
                     LyricsResult(lines = lines, source = "lrclib.net", isSynced = false)
                 } else {
                     null
@@ -78,17 +89,23 @@ class OnlineLyricsSource {
         }
     }
 
-    suspend fun searchLyrics(title: String, artist: String): List<LyricsResult> {
+    suspend fun searchLyrics(
+        title: String,
+        artist: String,
+    ): List<LyricsResult> {
         return withContext(Dispatchers.IO) {
             try {
-                val urlBuilder = StringBuilder("https://lrclib.net/api/search?")
-                    .append("track_name=${java.net.URLEncoder.encode(title, "UTF-8")}")
-                    .append("&artist_name=${java.net.URLEncoder.encode(artist, "UTF-8")}")
+                val urlBuilder =
+                    StringBuilder("https://lrclib.net/api/search?")
+                        .append("track_name=${java.net.URLEncoder.encode(title, "UTF-8")}")
+                        .append("&artist_name=${java.net.URLEncoder.encode(artist, "UTF-8")}")
 
-                val request = Request.Builder()
-                    .url(urlBuilder.toString())
-                    .header("User-Agent", "Ljod/0.1.0 (https://github.com/Veridian-Zenith/ljod)")
-                    .build()
+                val request =
+                    Request
+                        .Builder()
+                        .url(urlBuilder.toString())
+                        .header("User-Agent", "Ljod/0.1.0 (https://github.com/Veridian-Zenith/ljod)")
+                        .build()
 
                 val response = client.newCall(request).execute()
                 if (!response.isSuccessful) {
@@ -101,17 +118,21 @@ class OnlineLyricsSource {
                 results.mapNotNull { item ->
                     val syncedLyrics = item.syncedLyrics
                     val plainLyrics = item.plainLyrics
-                    val label = buildString {
-                        append(item.trackName ?: title)
-                        if (!item.artistName.isNullOrBlank()) append(" - ${item.artistName}")
-                    }
+                    val label =
+                        buildString {
+                            append(item.trackName ?: title)
+                            if (!item.artistName.isNullOrBlank()) append(" - ${item.artistName}")
+                        }
 
                     if (!syncedLyrics.isNullOrBlank()) {
                         val lines = parseSyncedLyrics(syncedLyrics)
                         LyricsResult(lines = lines, source = "lrclib.net ($label)", isSynced = true)
                     } else if (!plainLyrics.isNullOrBlank()) {
-                        val lines = plainLyrics.lines().filter { it.isNotBlank() }
-                            .map { LyricsLine(timeMs = 0, text = it) }
+                        val lines =
+                            plainLyrics
+                                .lines()
+                                .filter { it.isNotBlank() }
+                                .map { LyricsLine(timeMs = 0, text = it) }
                         LyricsResult(lines = lines, source = "lrclib.net ($label)", isSynced = false)
                     } else {
                         null
@@ -126,15 +147,18 @@ class OnlineLyricsSource {
 
     private fun parseSyncedLyrics(synced: String): List<LyricsLine> {
         val regex = Regex("""\[(\d{2}):(\d{2})\.(\d{2,3})](.*)""")
-        return synced.lines().mapNotNull { raw ->
-            val match = regex.find(raw.trim()) ?: return@mapNotNull null
-            val min = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
-            val sec = match.groupValues[2].toLongOrNull() ?: return@mapNotNull null
-            val ms = match.groupValues[3].let { v ->
-                if (v.length == 2) v.toLong() * 10 else v.toLongOrNull() ?: 0L
-            }
-            val text = match.groupValues[4].trim()
-            if (text.isNotEmpty()) LyricsLine(min * 60_000 + sec * 1000 + ms, text) else null
-        }.sortedBy { it.timeMs }
+        return synced
+            .lines()
+            .mapNotNull { raw ->
+                val match = regex.find(raw.trim()) ?: return@mapNotNull null
+                val min = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+                val sec = match.groupValues[2].toLongOrNull() ?: return@mapNotNull null
+                val ms =
+                    match.groupValues[3].let { v ->
+                        if (v.length == 2) v.toLong() * 10 else v.toLongOrNull() ?: 0L
+                    }
+                val text = match.groupValues[4].trim()
+                if (text.isNotEmpty()) LyricsLine(min * 60_000 + sec * 1000 + ms, text) else null
+            }.sortedBy { it.timeMs }
     }
 }

@@ -9,11 +9,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,9 +25,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Power
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +40,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,402 +49,156 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import dev.vz.ljod.core.ui.theme.NordicPalette
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import dev.vz.ljod.app.LjodViewModel
+import dev.vz.ljod.core.ui.glass.GlassButton
+import dev.vz.ljod.core.ui.glass.GlassChip
+import dev.vz.ljod.core.ui.glass.GlassSurface
+import dev.vz.ljod.core.ui.glass.GlassTone
+import dev.vz.ljod.core.ui.glass.LjodSwitch
+import dev.vz.ljod.core.ui.theme.LjodDimens
+import dev.vz.ljod.core.ui.theme.LjodTheme
 import dev.vz.ljod.data.gemini.AvailableModel
-import dev.vz.ljod.data.gemini.GeminiLyricsSource
-import dev.vz.ljod.data.settings.SettingsRepository
-import kotlinx.coroutines.launch
+import dev.vz.ljod.data.settings.RepeatMode
 
-private val LANGUAGES = listOf(
-    "English", "Spanish", "French", "German", "Italian",
-    "Portuguese", "Japanese", "Korean", "Chinese",
-    "Russian", "Arabic", "Hindi", "Turkish", "Dutch",
-)
+private val LANGUAGES =
+    listOf(
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Portuguese",
+        "Japanese",
+        "Korean",
+        "Chinese",
+        "Russian",
+        "Arabic",
+        "Hindi",
+        "Turkish",
+        "Dutch",
+    )
 
 @Composable
-fun SettingsScreen(padding: PaddingValues = PaddingValues()) {
+fun SettingsScreen(viewModel: LjodViewModel = hiltViewModel()) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val settings = remember { SettingsRepository(context) }
-    val apiKey by settings.geminiApiKey.collectAsState(initial = "")
-    val targetLang by settings.targetLanguage.collectAsState(initial = "English")
-    val geminiModel by settings.geminiModel.collectAsState(initial = "gemini-2.0-flash")
-    val romanization by settings.romanization.collectAsState(initial = false)
+    val palette = LjodTheme.palette
+
+    val targetLang by viewModel.targetLanguage.collectAsState()
+    val romanization by viewModel.romanizationEnabled.collectAsState()
+    val pureBlack by viewModel.pureBlack.collectAsState()
+    val animations by viewModel.animationsEnabled.collectAsState()
+    val shuffle by viewModel.shuffleMode.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
+    val crossfadeMs by viewModel.crossfadeMs.collectAsState()
+    val eqEnabled by viewModel.eqEnabled.collectAsState()
+
+    var biometric by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp)
+                .verticalScroll(rememberScrollState()),
     ) {
+        Spacer(Modifier.height(40.dp))
         Text(
             "Settings",
-            style = MaterialTheme.typography.headlineLarge.copy(
-                fontWeight = FontWeight.Bold,
-            ),
-            color = NordicPalette.accent,
+            style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black),
+            color = palette.accent,
         )
-        Spacer(Modifier.height(24.dp))
-        GeminiSection(settings, apiKey, geminiModel, scope, context)
-        TranslationSection(settings, targetLang, romanization, scope)
-        PlaybackSection(context)
-        SystemSection(context)
-        Spacer(Modifier.height(24.dp))
-        Text("Ljod v0.1.0", style = MaterialTheme.typography.bodySmall, color = NordicPalette.textSecondary)
-        Text("Veridian Zenith", style = MaterialTheme.typography.bodySmall, color = NordicPalette.accent)
-    }
-}
+        Spacer(Modifier.height(16.dp))
 
-@Composable
-private fun SettingsCard(
-    title: String,
-    icon: ImageVector,
-    content: @Composable () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .shadow(8.dp, RoundedCornerShape(20.dp))
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(NordicPalette.surfaceHigh, NordicPalette.surface),
-                ),
-            )
-            .border(1.dp, NordicPalette.border, RoundedCornerShape(20.dp))
-            .padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = NordicPalette.accent, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium, color = NordicPalette.accent)
+        SettingsCard(title = "AI (Optional)", icon = Icons.Rounded.SmartToy) {
+            GeminiSection(viewModel)
         }
         Spacer(Modifier.height(12.dp))
-        content()
-    }
-}
 
-@Composable
-private fun GeminiSection(
-    settings: SettingsRepository,
-    apiKey: String,
-    currentModel: String,
-    scope: kotlinx.coroutines.CoroutineScope,
-    context: android.content.Context,
-) {
-    var showApiKeyInput by remember { mutableStateOf(false) }
-    var editingKey by remember { mutableStateOf(apiKey) }
-    var showModelDialog by remember { mutableStateOf(false) }
-    var availableModels by remember { mutableStateOf<List<AvailableModel>>(emptyList()) }
-    var isLoadingModels by remember { mutableStateOf(false) }
-    val geminiSource = remember { GeminiLyricsSource() }
-
-    SettingsCard(title = "Gemini AI (Optional)", icon = Icons.Rounded.SmartToy) {
-        Text(
-            "All core features work without an API key. AI features are optional enhancements.",
-            style = MaterialTheme.typography.bodySmall,
-            color = NordicPalette.textSecondary,
-        )
-        Spacer(Modifier.height(8.dp))
-        SettingsItem(
-            title = "AI Model",
-            subtitle = if (apiKey.isNotBlank()) {
-                availableModels.find { it.id == currentModel }?.displayName ?: currentModel
-            } else {
-                "Add an API key first"
-            },
-            enabled = apiKey.isNotBlank(),
-            onClick = {
-                if (apiKey.isNotBlank()) {
-                    if (availableModels.isEmpty()) {
-                        isLoadingModels = true
-                        scope.launch {
-                            availableModels = geminiSource.fetchAvailableModels(apiKey)
-                            isLoadingModels = false
-                            showModelDialog = true
-                        }
-                    } else {
-                        showModelDialog = true
-                    }
-                } else {
-                    showApiKeyInput = true
-                }
-            },
-        )
-        AnimatedVisibility(visible = isLoadingModels) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    color = NordicPalette.accent,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("Fetching available models...", style = MaterialTheme.typography.bodySmall, color = NordicPalette.textSecondary)
-            }
+        SettingsCard(title = "Playback", icon = Icons.Rounded.Power) {
+            ToggleRow(
+                title = "Shuffle",
+                subtitle = "Play in random order",
+                checked = shuffle,
+                onToggle = {
+                    viewModel.toggleShuffle()
+                },
+            )
+            RepeatRow(
+                current = repeatMode,
+                onSelect = {
+                    viewModel.setRepeatMode(it)
+                },
+            )
+            SliderRow(
+                title = "Crossfade",
+                subtitle = "Overlap tracks (0 = off)",
+                value = crossfadeMs.toFloat(),
+                range = 0f..12_000f,
+                steps = 11,
+                onChange = { v ->
+                    viewModel.setCrossfadeMs(v.toInt())
+                },
+                valueLabel = "${crossfadeMs / 1000}s",
+            )
+            ToggleRow(
+                title = "Equalizer",
+                subtitle = "System-wide audio effects",
+                checked = eqEnabled,
+                onToggle = { viewModel.setEqEnabled(it) },
+            )
         }
-        SettingsItem(
-            title = "Gemini API Key",
-            subtitle = if (apiKey.isNotBlank()) {
-                "Configured (${apiKey.take(8)}...)"
-            } else {
-                "Add a key to enable AI features"
-            },
-            enabled = true,
-            onClick = { showApiKeyInput = !showApiKeyInput },
-        )
-        if (showApiKeyInput) {
-            ApiKeyInput(editingKey, { editingKey = it }) {
-                scope.launch {
-                    settings.setGeminiApiKey(editingKey)
-                    showApiKeyInput = false
-                    availableModels = emptyList()
-                    Toast.makeText(context, "API key saved", Toast.LENGTH_SHORT).show()
-                }
-            }
+        Spacer(Modifier.height(12.dp))
+
+        SettingsCard(title = "Lyrics", icon = Icons.Rounded.Language) {
+            TranslationLanguageRow(targetLang) { viewModel.setTargetLanguage(it) }
+            ToggleRow(
+                title = "Romanization",
+                subtitle = "Pinyin, Romaji, etc. below original",
+                checked = romanization,
+                onToggle = { viewModel.setRomanization(it) },
+            )
         }
-    }
-    if (showModelDialog && availableModels.isNotEmpty()) {
-        ModelDialog(
-            models = availableModels,
-            currentModel = currentModel,
-            onSelect = { model ->
-                scope.launch { settings.setGeminiModel(model) }
-                showModelDialog = false
-            },
-            onDismiss = { showModelDialog = false },
-        )
-    }
-    Spacer(Modifier.height(12.dp))
-}
+        Spacer(Modifier.height(12.dp))
 
-@Composable
-private fun ApiKeyInput(
-    value: String,
-    onValueChange: (String) -> Unit,
-    onSave: () -> Unit,
-) {
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text("API Key") },
-        singleLine = true,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = NordicPalette.textPrimary,
-            unfocusedTextColor = NordicPalette.textPrimary,
-            focusedBorderColor = NordicPalette.accent,
-            unfocusedBorderColor = NordicPalette.border,
-            focusedLabelColor = NordicPalette.accent,
-            cursorColor = NordicPalette.accent,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        "SAVE KEY",
-        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-        color = NordicPalette.accent,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(NordicPalette.accentDim)
-            .clickable(onClick = onSave)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun ModelDialog(
-    models: List<AvailableModel>,
-    currentModel: String,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = NordicPalette.surfaceHigh,
-        titleContentColor = NordicPalette.accent,
-        textContentColor = NordicPalette.textPrimary,
-        title = { Text("Select AI Model") },
-        text = {
-            Column {
-                models.forEach { model ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (currentModel == model.id) NordicPalette.accentDim else NordicPalette.bg,
-                            )
-                            .clickable { onSelect(model.id) }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(model.displayName, style = MaterialTheme.typography.bodyMedium, color = NordicPalette.textPrimary)
-                            if (model.inputTokenLimit > 0) {
-                                Text(
-                                    "Context: ${model.inputTokenLimit / 1000}k tokens",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = NordicPalette.textSecondary,
-                                )
-                            }
-                        }
-                        if (currentModel == model.id) {
-                            Text("Active", style = MaterialTheme.typography.bodySmall, color = NordicPalette.accent)
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = NordicPalette.textSecondary)
-            }
-        },
-    )
-}
-
-@Composable
-private fun TranslationSection(
-    settings: SettingsRepository,
-    targetLang: String,
-    romanization: Boolean,
-    scope: kotlinx.coroutines.CoroutineScope,
-) {
-    var showLangDialog by remember { mutableStateOf(false) }
-
-    SettingsCard(title = "Translation & Romanization", icon = Icons.Rounded.Language) {
-        SettingsItem(
-            title = "Target Language",
-            subtitle = targetLang,
-            enabled = true,
-            onClick = { showLangDialog = true },
-        )
-        ToggleItem(
-            title = "Auto-Romanize",
-            subtitle = "Show romanized text alongside original (Pinyin, Romaji, etc.)",
-            checked = romanization,
-        ) { scope.launch { settings.setRomanization(it) } }
-    }
-
-    if (showLangDialog) {
-        AlertDialog(
-            onDismissRequest = { showLangDialog = false },
-            containerColor = NordicPalette.surfaceHigh,
-            titleContentColor = NordicPalette.accent,
-            textContentColor = NordicPalette.textPrimary,
-            title = { Text("Translation Language") },
-            text = {
-                Column {
-                    LANGUAGES.forEach { lang ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (lang == targetLang) NordicPalette.accentDim else NordicPalette.bg,
-                                )
-                                .clickable {
-                                    scope.launch { settings.setTargetLanguage(lang) }
-                                    showLangDialog = false
-                                }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(lang, style = MaterialTheme.typography.bodyLarge, color = NordicPalette.textPrimary)
-                            if (lang == targetLang) {
-                                Spacer(Modifier.weight(1f))
-                                Text("Active", style = MaterialTheme.typography.bodySmall, color = NordicPalette.accent)
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showLangDialog = false }) {
-                    Text("Cancel", color = NordicPalette.textSecondary)
-                }
-            },
-        )
-    }
-    Spacer(Modifier.height(12.dp))
-}
-
-@Composable
-private fun PlaybackSection(context: android.content.Context) {
-    var audioFocus by remember { mutableStateOf(true) }
-    var gapless by remember { mutableStateOf(true) }
-
-    SettingsCard(title = "Playback", icon = Icons.Rounded.Power) {
-        ToggleItem("Audio Focus", "Pause when other apps play audio", audioFocus) {
-            audioFocus = it
-            Toast.makeText(
-                context,
-                if (it) "Audio focus enabled" else "Audio focus disabled",
-                Toast.LENGTH_SHORT,
-            ).show()
+        SettingsCard(title = "Appearance", icon = Icons.Rounded.Palette) {
+            ToggleRow(
+                title = "Pure black (AMOLED)",
+                subtitle = "Saves battery on OLED",
+                checked = pureBlack,
+                onToggle = { viewModel.setPureBlack(it) },
+            )
+            ToggleRow(
+                title = "Animations",
+                subtitle = "Smooth transitions and effects",
+                checked = animations,
+                onToggle = { viewModel.setAnimationsEnabled(it) },
+            )
         }
-        ToggleItem("Gapless Playback", "Seamless track transitions", gapless) {
-            gapless = it
-            Toast.makeText(
-                context,
-                if (it) "Gapless enabled" else "Gapless disabled",
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
-    }
-    Spacer(Modifier.height(12.dp))
-}
+        Spacer(Modifier.height(12.dp))
 
-@Composable
-private fun ToggleItem(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onToggle: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable { onToggle(!checked) }
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = NordicPalette.textPrimary)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = NordicPalette.textSecondary)
+        SettingsCard(title = "Security", icon = Icons.Rounded.Security) {
+            ToggleRow(
+                title = "App lock",
+                subtitle = "Require biometric to open Ljod",
+                checked = biometric,
+                onToggle = { biometric = it },
+            )
         }
-        Text(
-            if (checked) "ON" else "OFF",
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-            color = if (checked) NordicPalette.accent else NordicPalette.textSecondary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (checked) NordicPalette.accentDim else NordicPalette.bg)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
-    }
-}
+        Spacer(Modifier.height(12.dp))
 
-@Composable
-private fun SystemSection(context: android.content.Context) {
-    SettingsCard(title = "System", icon = Icons.Rounded.Notifications) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            SettingsItem("Notification Permission", "For playback controls", enabled = true) {
+        SettingsCard(title = "System", icon = Icons.Rounded.Notifications) {
+            SystemRow("Notification permission", "For playback controls") {
                 try {
                     context.startActivity(
                         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
@@ -449,43 +209,343 @@ private fun SystemSection(context: android.content.Context) {
                     Toast.makeText(context, "Cannot open notification settings", Toast.LENGTH_SHORT).show()
                 }
             }
-        }
-        SettingsItem("Battery Optimization", "Keep playback alive", enabled = true) {
-            try {
-                context.startActivity(
-                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                    },
-                )
-            } catch (_: Exception) {
-                Toast.makeText(context, "Cannot open battery settings", Toast.LENGTH_SHORT).show()
+            SystemRow("Battery optimization", "Keep playback alive") {
+                try {
+                    context.startActivity(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        },
+                    )
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Cannot open battery settings", Toast.LENGTH_SHORT).show()
+                }
+            }
+            SystemRow("Rescan library") {
+                viewModel.rescan()
+                Toast.makeText(context, "Library rescanning...", Toast.LENGTH_SHORT).show()
             }
         }
+        Spacer(Modifier.height(12.dp))
+
+        SettingsCard(title = "About", icon = Icons.Rounded.Info) {
+            Text(
+                "Ljod v0.2.0",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = palette.textPrimary,
+            )
+            Text(
+                "Veridian Zenith — Forge your sound.",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.accent,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Built with Jetpack Compose, Media3, Hilt, Room, and the Android Keystore.",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary,
+            )
+        }
+        Spacer(Modifier.height(40.dp))
     }
-    Spacer(Modifier.height(12.dp))
 }
 
 @Composable
-private fun SettingsItem(title: String, subtitle: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun SettingsCard(
+    title: String,
+    icon: ImageVector,
+    content: @Composable () -> Unit,
+) {
+    val palette = LjodTheme.palette
+    GlassSurface(
+        tone = GlassTone.Subtle,
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = LjodDimens.radiusXl,
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = palette.accent, modifier = Modifier.size(LjodDimens.iconMd))
+                Spacer(Modifier.width(8.dp))
+                Text(title.uppercase(), style = MaterialTheme.typography.titleSmall.copy(letterSpacing = 1.5.sp), color = palette.accent)
+            }
+            Spacer(Modifier.height(12.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val palette = LjodTheme.palette
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(LjodDimens.radiusMd))
+                .clickable { onToggle(!checked) }
+                .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+        }
+        LjodSwitch(checked = checked, onCheckedChange = onToggle)
+    }
+}
+
+@Composable
+private fun RepeatRow(
+    current: RepeatMode,
+    onSelect: (RepeatMode) -> Unit,
+) {
+    val palette = LjodTheme.palette
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Repeat", style = MaterialTheme.typography.bodyLarge, color = palette.textPrimary)
+            Text("Loop a song or the whole queue", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            GlassChip("Off", selected = current == RepeatMode.Off, onClick = { onSelect(RepeatMode.Off) })
+            GlassChip("All", selected = current == RepeatMode.All, onClick = { onSelect(RepeatMode.All) })
+            GlassChip("One", selected = current == RepeatMode.One, onClick = { onSelect(RepeatMode.One) })
+        }
+    }
+}
+
+@Composable
+private fun TranslationLanguageRow(
+    current: String,
+    onSelect: (String) -> Unit,
+) {
+    val palette = LjodTheme.palette
+    var showDialog by remember { mutableStateOf(false) }
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(LjodDimens.radiusMd.let { RoundedCornerShape(it) })
+                .clickable { showDialog = true }
+                .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Translation language", style = MaterialTheme.typography.bodyLarge, color = palette.textPrimary)
+            Text(current, style = MaterialTheme.typography.bodySmall, color = palette.accent)
+        }
+    }
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            containerColor = palette.surface,
+            titleContentColor = palette.accent,
+            textContentColor = palette.textPrimary,
+            title = { Text("Translation language") },
+            text = {
+                Column {
+                    LANGUAGES.forEach { lang ->
+                        Text(
+                            text = lang,
+                            color = if (lang == current) palette.accent else palette.textPrimary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(LjodDimens.radiusSm.let { RoundedCornerShape(it) })
+                                    .clickable {
+                                        onSelect(lang)
+                                        showDialog = false
+                                    }.padding(12.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) { Text("Close", color = palette.accent) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SliderRow(
+    title: String,
+    subtitle: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    onChange: (Float) -> Unit,
+    valueLabel: String,
+) {
+    val palette = LjodTheme.palette
+    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, color = palette.textPrimary)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+            }
             Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (enabled) NordicPalette.textPrimary else NordicPalette.textSecondary,
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = NordicPalette.textSecondary,
+                valueLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.accent,
             )
         }
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            valueRange = range,
+            steps = steps,
+            colors =
+                SliderDefaults.colors(
+                    thumbColor = palette.accent,
+                    activeTrackColor = palette.accent,
+                    inactiveTrackColor = palette.surfaceHigh,
+                ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun SystemRow(
+    title: String,
+    subtitle: String? = null,
+    onClick: () -> Unit,
+) {
+    val palette = LjodTheme.palette
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(LjodDimens.radiusMd.let { RoundedCornerShape(it) })
+                .clickable(onClick = onClick)
+                .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = palette.textPrimary)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+            }
+        }
+        Text("›", color = palette.accent)
+    }
+}
+
+@Composable
+private fun GeminiSection(viewModel: LjodViewModel) {
+    val context = LocalContext.current
+    val palette = LjodTheme.palette
+    var showApiKeyInput by remember { mutableStateOf(false) }
+    var editingKey by remember { mutableStateOf("") }
+    var showModelDialog by remember { mutableStateOf(false) }
+    var availableModels by remember { mutableStateOf<List<AvailableModel>>(emptyList()) }
+    var isLoadingModels by remember { mutableStateOf(false) }
+    var hasKey by remember { mutableStateOf(false) }
+
+    Column {
+        Text(
+            "All core features work without an API key. AI features are optional.",
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.textSecondary,
+        )
+        Spacer(Modifier.height(8.dp))
+        ToggleRow(
+            title = "API key",
+            subtitle = if (hasKey) "Configured" else "Add a key to enable AI",
+            checked = hasKey,
+            onToggle = { showApiKeyInput = !showApiKeyInput },
+        )
+        if (showApiKeyInput) {
+            OutlinedTextField(
+                value = editingKey,
+                onValueChange = { editingKey = it },
+                label = { Text("Gemini API key") },
+                singleLine = true,
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = palette.textPrimary,
+                        unfocusedTextColor = palette.textPrimary,
+                        focusedBorderColor = palette.accent,
+                        unfocusedBorderColor = palette.border,
+                        focusedLabelColor = palette.accent,
+                        cursorColor = palette.accent,
+                    ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            GlassButton(
+                text = "Save key",
+                onClick = {
+                    viewModel.setGeminiApiKey(editingKey)
+                    hasKey = editingKey.isNotBlank()
+                    showApiKeyInput = false
+                    editingKey = ""
+                    Toast.makeText(context, "API key saved", Toast.LENGTH_SHORT).show()
+                },
+                tone = GlassTone.Accent,
+            )
+        }
+        AnimatedVisibility(visible = isLoadingModels) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(color = palette.accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Fetching models...", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+            }
+        }
+        if (hasKey) {
+            Spacer(Modifier.height(8.dp))
+            GlassButton(
+                text = "Browse models",
+                onClick = {
+                    isLoadingModels = true
+                    viewModel.fetchAvailableModels { models ->
+                        availableModels = models
+                        isLoadingModels = false
+                        showModelDialog = models.isNotEmpty()
+                    }
+                },
+                tone = GlassTone.Subtle,
+            )
+        }
+    }
+    if (showModelDialog && availableModels.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showModelDialog = false },
+            containerColor = palette.surface,
+            titleContentColor = palette.accent,
+            textContentColor = palette.textPrimary,
+            title = { Text("Select model") },
+            text = {
+                Column {
+                    availableModels.forEach { model ->
+                        Text(
+                            model.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = palette.textPrimary,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(LjodDimens.radiusSm.let { RoundedCornerShape(it) })
+                                    .clickable { showModelDialog = false }
+                                    .padding(12.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showModelDialog = false }) { Text("Close", color = palette.accent) }
+            },
+        )
     }
 }

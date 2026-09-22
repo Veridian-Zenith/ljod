@@ -15,17 +15,33 @@ object LjodDimens {
     val spacingXxl = 48.dp
     val spacingXxxl = 64.dp
 
-    val radiusSm = 4.dp
-    val radiusMd = 8.dp
-    val radiusLg = 12.dp
-    val radiusXl = 16.dp
-    val radiusXxl = 24.dp
+    val radiusXs = 4.dp
+    val radiusSm = 6.dp
+    val radiusMd = 10.dp
+    val radiusLg = 16.dp
+    val radiusXl = 20.dp
+    val radiusXxl = 28.dp
+    val radiusHero = 36.dp
     val radiusPill = 9999.dp
 
     val elevationNone = 0.dp
     val elevationSm = 2.dp
     val elevationMd = 4.dp
     val elevationLg = 8.dp
+    val elevationXl = 16.dp
+    val elevationHero = 24.dp
+
+    val strokeHairline = 0.5.dp
+    val strokeThin = 1.dp
+    val strokeThick = 2.dp
+
+    val minTouchTarget = 48.dp
+    val iconSm = 16.dp
+    val iconMd = 20.dp
+    val iconLg = 24.dp
+    val iconXl = 32.dp
+    val iconHero = 48.dp
+    val iconKing = 72.dp
 }
 
 @Immutable

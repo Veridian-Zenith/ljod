@@ -1,131 +1,193 @@
 package dev.vz.ljod.core.ui.theme
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
+@Immutable
 data class LjodPalette(
     val accent: Color,
-    val accent2: Color,
-    val accent3: Color,
     val accentMuted: Color,
     val accentDim: Color,
-    val glow: Color,
-    val gradient1: Color,
-    val gradient2: Color,
-    val gradient3: Color,
+    val accentDeep: Color,
+    val accentGlow: Color,
+    val accentHot: Color,
+    val onAccent: Color,
     val bg: Color,
+    val bgElevated: Color,
     val surface: Color,
     val surfaceHigh: Color,
     val surfaceHighest: Color,
     val border: Color,
+    val borderStrong: Color,
     val textPrimary: Color,
     val textSecondary: Color,
+    val textTertiary: Color,
+    val success: Color,
+    val warning: Color,
     val error: Color,
-    val glassHighlight: Color,
+    val glassLight: Color,
     val glassBorder: Color,
+    val glassHighlight: Color,
+    val glassScrim: Color,
+    val scrim: Color,
 )
 
-val NordicPalette = LjodPalette(
-    accent = Color(0xFFFFB347),
-    accent2 = Color(0xFFE85D75),
-    accent3 = Color(0xFF7C6BFF),
-    accentMuted = Color(0x99FFB347),
-    accentDim = Color(0x33FFB347),
-    glow = Color(0xCCFFB347),
-    gradient1 = Color(0xFFFFB347),
-    gradient2 = Color(0xFFE85D75),
-    gradient3 = Color(0xFF7C6BFF),
-    bg = Color(0xFF050200),
-    surface = Color(0xFF0F0A05),
-    surfaceHigh = Color(0xFF1A1208),
-    surfaceHighest = Color(0xFF251C0E),
-    border = Color(0x33FFB347),
-    textPrimary = Color(0xFFF3F4F6),
-    textSecondary = Color(0xFF9CA3AF),
-    error = Color(0xFFEF4444),
-    glassHighlight = Color(0x15FFFFFF),
-    glassBorder = Color(0x33FFFFFF),
-)
+val AmoledPalette =
+    LjodPalette(
+        accent = Color(0xFFE11D2E),
+        accentMuted = Color(0xFFB11226),
+        accentDim = Color(0x33E11D2E),
+        accentDeep = Color(0xFF7A0A18),
+        accentGlow = Color(0xCCE11D2E),
+        accentHot = Color(0xFFFF3344),
+        onAccent = Color(0xFFFFFFFF),
+        bg = Color(0xFF000000),
+        bgElevated = Color(0xFF0A0202),
+        surface = Color(0xFF120404),
+        surfaceHigh = Color(0xFF1A0606),
+        surfaceHighest = Color(0xFF240A0A),
+        border = Color(0x33E11D2E),
+        borderStrong = Color(0x66E11D2E),
+        textPrimary = Color(0xFFF5F2F2),
+        textSecondary = Color(0xFFA89A9A),
+        textTertiary = Color(0xFF6B5C5C),
+        success = Color(0xFF22C55E),
+        warning = Color(0xFFF59E0B),
+        error = Color(0xFFE11D2E),
+        glassLight = Color(0x14FFFFFF),
+        glassBorder = Color(0x22FFFFFF),
+        glassHighlight = Color(0x1FFFFFFF),
+        glassScrim = Color(0x66000000),
+        scrim = Color(0xCC000000),
+    )
 
+@Immutable
+object LjodBlur {
+    const val None = 0
+    const val Low = 8
+    const val Med = 16
+    const val High = 28
+}
+
+@Immutable
 object GlassStyle {
-    val verticalGradient = Brush.verticalGradient(
-        listOf(
-            Color(0x25FFFFFF),
-            Color(0x10FFFFFF),
-        ),
-    )
+    val verticalSubtle =
+        Brush.verticalGradient(
+            listOf(
+                Color(0x14FFFFFF),
+                Color(0x08FFFFFF),
+            ),
+        )
 
-    val accentGradient = Brush.verticalGradient(
-        listOf(
-            NordicPalette.accent.copy(alpha = 0.3f),
-            NordicPalette.accent.copy(alpha = 0.1f),
-        ),
-    )
+    val verticalGradient =
+        Brush.verticalGradient(
+            listOf(
+                Color(0x1FFFFFFF),
+                Color(0x0AFFFFFF),
+            ),
+        )
 
-    val surfaceGradient = Brush.verticalGradient(
-        listOf(
-            NordicPalette.surfaceHighest,
-            NordicPalette.surfaceHigh,
-        ),
-    )
+    val accentGradient =
+        Brush.verticalGradient(
+            listOf(
+                AmoledPalette.accent.copy(alpha = 0.40f),
+                AmoledPalette.accent.copy(alpha = 0.10f),
+            ),
+        )
 
-    val chipGradient = Brush.verticalGradient(
-        listOf(
-            Color(0x30FFB347),
-            Color(0x12FFB347),
-        ),
-    )
+    val surfaceGradient =
+        Brush.verticalGradient(
+            listOf(
+                AmoledPalette.surfaceHighest,
+                AmoledPalette.surface,
+            ),
+        )
 
-    val heroGradient = Brush.horizontalGradient(
-        listOf(
-            NordicPalette.accent.copy(alpha = 0.18f),
-            NordicPalette.gradient2.copy(alpha = 0.12f),
-            NordicPalette.gradient3.copy(alpha = 0.08f),
-            NordicPalette.surface,
-        ),
-    )
+    val chipGradient =
+        Brush.verticalGradient(
+            listOf(
+                Color(0x30E11D2E),
+                Color(0x12E11D2E),
+            ),
+        )
 
-    val cardWarm = Brush.horizontalGradient(
-        listOf(
-            NordicPalette.accent.copy(alpha = 0.15f),
-            NordicPalette.surfaceHigh,
-        ),
-    )
+    val heroGradient =
+        Brush.linearGradient(
+            listOf(
+                AmoledPalette.accentHot.copy(alpha = 0.22f),
+                AmoledPalette.accent.copy(alpha = 0.12f),
+                AmoledPalette.accentDeep.copy(alpha = 0.08f),
+                AmoledPalette.bg,
+            ),
+        )
 
-    val cardCool = Brush.horizontalGradient(
-        listOf(
-            NordicPalette.gradient3.copy(alpha = 0.12f),
-            NordicPalette.surfaceHigh,
-        ),
-    )
+    val cardWarm =
+        Brush.horizontalGradient(
+            listOf(
+                AmoledPalette.accent.copy(alpha = 0.18f),
+                AmoledPalette.surfaceHigh,
+            ),
+        )
 
-    val miniPlayerGradient = Brush.verticalGradient(
-        listOf(
-            NordicPalette.accent.copy(alpha = 0.12f),
-            NordicPalette.surfaceHighest,
-            NordicPalette.surfaceHigh,
-        ),
-    )
+    val cardCool =
+        Brush.horizontalGradient(
+            listOf(
+                AmoledPalette.accentHot.copy(alpha = 0.10f),
+                AmoledPalette.surfaceHigh,
+            ),
+        )
 
-    val bottomBarGradient = Brush.verticalGradient(
-        listOf(
-            NordicPalette.surfaceHighest,
-            NordicPalette.surface,
-        ),
-    )
+    val miniPlayerGradient =
+        Brush.verticalGradient(
+            listOf(
+                AmoledPalette.accent.copy(alpha = 0.18f),
+                AmoledPalette.surfaceHighest,
+                AmoledPalette.surface,
+            ),
+        )
 
-    val activeTabGradient = Brush.verticalGradient(
-        listOf(
-            NordicPalette.accent.copy(alpha = 0.2f),
-            NordicPalette.accent.copy(alpha = 0.05f),
-        ),
-    )
+    val bottomBarGradient =
+        Brush.verticalGradient(
+            listOf(
+                AmoledPalette.surfaceHighest,
+                AmoledPalette.surface,
+                AmoledPalette.bg,
+            ),
+        )
 
-    val warmBorderGlow = Brush.horizontalGradient(
-        listOf(
-            NordicPalette.accent.copy(alpha = 0.4f),
-            NordicPalette.gradient2.copy(alpha = 0.2f),
-            Color.Transparent,
-        ),
-    )
+    val activeTabGradient =
+        Brush.verticalGradient(
+            listOf(
+                AmoledPalette.accent.copy(alpha = 0.22f),
+                AmoledPalette.accent.copy(alpha = 0.04f),
+            ),
+        )
+
+    val redBorderGlow =
+        Brush.horizontalGradient(
+            listOf(
+                AmoledPalette.accent.copy(alpha = 0.50f),
+                AmoledPalette.accentHot.copy(alpha = 0.25f),
+                Color.Transparent,
+            ),
+        )
+
+    val progressTrack =
+        Brush.horizontalGradient(
+            listOf(
+                AmoledPalette.accentDeep,
+                AmoledPalette.accent,
+                AmoledPalette.accentHot,
+            ),
+        )
+
+    val scrim =
+        Brush.verticalGradient(
+            listOf(
+                Color.Transparent,
+                AmoledPalette.bg.copy(alpha = 0.6f),
+                AmoledPalette.bg,
+            ),
+        )
 }

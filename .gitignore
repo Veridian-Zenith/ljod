@@ -12,7 +12,6 @@ local.properties
 *.hprof
 
 # IDE
-.idea/
 *.iml
 *.ipr
 *.iws
@@ -25,3 +24,13 @@ Thumbs.db
 # Generated
 generated/
 lint-baseline.xml
+
+# Secrets / local release
+.env
+app/keystore/
+*.p12
+gradle.properties
+
+# Example References to Functional Application Code
+elovaire-music
+PixelPlayer

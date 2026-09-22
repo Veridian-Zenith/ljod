@@ -5,12 +5,14 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.ktlint)
 }
 
 detekt {
     config.setFrom(file("$rootDir/gradle/config/detekt.yml"))
     buildUponDefaultConfig = true
     allRules = false
+    toolVersion = "1.23.8"
 }
 
 android {
@@ -27,18 +29,50 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile =
+                file(
+                    (findProperty("ANDROID_KEYSTORE_PATH") as String?)
+                        ?: System.getenv("ANDROID_KEYSTORE_PATH")
+                        ?: "keystore/ljod.p12",
+                )
+            storePassword =
+                (findProperty("ANDROID_KEYSTORE_PASSWORD") as String?)
+                    ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                    ?: System.getProperty("ANDROID_KEYSTORE_PASSWORD")
+                    ?: ""
+            keyAlias = (findProperty("ANDROID_KEY_ALIAS") as String?) ?: System.getenv("ANDROID_KEY_ALIAS") ?: "ljod"
+            keyPassword =
+                (findProperty("ANDROID_KEY_PASSWORD") as String?)
+                    ?: System.getenv("ANDROID_KEY_PASSWORD")
+                    ?: System.getProperty("ANDROID_KEY_PASSWORD")
+                    ?: ""
+        }
+    }
+
     buildTypes {
         debug {
-            isMinifyEnabled = false
-        }
-        release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+
+    kotlin {
+        jvmToolchain(21)
     }
 
     compileOptions {
@@ -84,6 +118,8 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
 
     // Persistence
     implementation(libs.room.runtime)
@@ -106,4 +142,14 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx)
+    implementation(libs.okhttp.logging)
+    implementation(libs.biometric)
+    implementation(libs.security.crypto)
+    implementation(libs.workmanager)
+    implementation(libs.fragment.compose)
+    implementation(libs.datastore.preferences)
+    implementation(libs.datastore)
+    implementation(libs.glance)
+    implementation(libs.glance.material3)
+    coreLibraryDesugaring(libs.desugar)
 }
