@@ -10,6 +10,7 @@ build/
 .gradle/
 local.properties
 *.hprof
+.kls/
 
 # IDE
 *.iml
