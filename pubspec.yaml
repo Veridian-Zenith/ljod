@@ -28,7 +28,7 @@ dependencies:
   sqflite: ^2.3.2
 
   # Security & Storage
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^11.2.0
 
   # Networking & Serialization
   dio: ^5.4.0
