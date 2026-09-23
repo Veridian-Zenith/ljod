@@ -17,6 +17,7 @@ local.properties
 *.ipr
 *.iws
 .vscode/
+.idea/
 
 # OS
 .DS_Store
@@ -32,6 +33,5 @@ app/keystore/
 *.p12
 gradle.properties
 
-# Example References to Functional Application Code
-elovaire-music
-PixelPlayer
+# Misc
+ljod
