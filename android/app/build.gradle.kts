@@ -1,6 +1,15 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("../local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
 }
 
 android {
@@ -27,12 +36,17 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file(
-                System.getenv("ANDROID_KEYSTORE_PATH") ?: "keystore/ljod.p12"
-            )
-            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: ""
-            keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "ljod"
-            keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: ""
+            val keystorePathProp = localProperties.getProperty("ANDROID_KEYSTORE_PATH") ?: "app/keystore/ljod.p12"
+            storeFile = rootProject.file(keystorePathProp)
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") 
+                ?: localProperties.getProperty("ANDROID_KEYSTORE_PASSWORD")
+                ?: ""
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS") 
+                ?: localProperties.getProperty("ANDROID_KEY_ALIAS")
+                ?: "ljod"
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD") 
+                ?: localProperties.getProperty("ANDROID_KEY_PASSWORD")
+                ?: ""
         }
     }
 
