@@ -19,7 +19,7 @@ dependencies:
   riverpod_annotation: ^2.3.5
 
   # Audio & Background Playback
-  just_audio: ^0.9.36
+  just_audio: ^0.10.6
   audio_service: ^0.18.12
 
   # Database & Local Storage
