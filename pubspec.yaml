@@ -12,14 +12,14 @@ dependencies:
 
   # UI & Material Design 3
   cupertino_icons: ^1.0.8
-  google_fonts: ^6.2.1
+  google_fonts: ^8.2.1
 
   # State Management & DI
   flutter_riverpod: ^2.5.1
   riverpod_annotation: ^2.3.5
 
   # Audio & Background Playback
-  just_audio: ^0.9.36
+  just_audio: ^0.10.6
   audio_service: ^0.18.12
 
   # Database & Local Storage
@@ -28,7 +28,7 @@ dependencies:
   sqflite: ^2.3.2
 
   # Security & Storage
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^11.2.0
 
   # Networking & Serialization
   dio: ^5.4.0
@@ -37,7 +37,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^6.0.0
   build_runner: ^2.4.8
   riverpod_generator: ^2.3.9
   json_serializable: ^6.7.1
