@@ -43,12 +43,24 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
 
 # Widget Preview related
 .widget_preview/
 
 # Gradle Related
 local.properties
+/.gradle/
+
+# Signing material must never be committed
+/android/app/keystore/
+*.p12
+*.jks
+*.keystore
+# Decoded keystore location used by android/app/build.gradle.kts
+/android/.gradle-signing/
 
 # Extremely Important to keep local-only copy
-android/app/keystore/
+android/app/keystore/node_modules/.cache
+coverage/
+flutter_sysroot_cache/

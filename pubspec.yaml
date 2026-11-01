@@ -1,46 +1,61 @@
 name: ljod
-description: "A secure, modular, high-performance audio player built with Flutter."
+description: "A secure, modular, high-performance audio player forged by Veridian Zenith."
 publish_to: "none"
-version: 0.1.0+1
+version: 0.3.0+3
 
 environment:
-  sdk: ">=3.13.4 <4.0.0"
+  sdk: ">=3.13.0 <4.0.0"
+  flutter: ">=3.47.0"
 
 dependencies:
   flutter:
     sdk: flutter
 
-  # UI & Material Design 3
-  cupertino_icons: ^1.0.8
-  google_fonts: ^8.2.1
+  # UI — the official Material UI package (Material 3 Expressive).
+  # Flutter 3.47 moved package:flutter/material.dart into material_ui.
+  material_ui: ^1.9.0
 
-  # State Management & DI
+  # State management & DI
   flutter_riverpod: ^3.4.3
-  riverpod_annotation: ^4.0.7
 
-  # Audio & Background Playback
+  # Audio & background playback
   just_audio: ^0.10.6
-  audio_service: ^0.18.12
+  audio_service: ^0.18.19
+  audio_metadata_reader: ^1.8.1
 
-  # Database & Local Storage
-  path: ^1.9.0
-  path_provider: ^2.1.2
-  sqflite: ^2.3.2
+  # Storage
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  shared_preferences: ^2.5.3
+  sqflite: ^2.4.5
 
-  # Security & Storage
-  flutter_secure_storage: ^11.2.0
+  # Networking (lyrics lookup)
+  dio: ^5.11.1
 
-  # Networking & Serialization
-  dio: ^5.4.0
-  json_annotation: ^4.12.0
+  # Permissions
+  permission_handler: ^13.0.2
+
+  # Media session / notification integration
+  audio_session: ^0.2.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  build_runner: ^2.16.1
-  riverpod_generator: ^4.0.9
-  json_serializable: ^6.14.1
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/JetBrainsMono-ExtraBold.ttf
+          weight: 800
