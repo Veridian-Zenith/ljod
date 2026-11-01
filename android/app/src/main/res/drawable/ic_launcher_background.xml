@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive background: pitch black with a faint forge warmth behind the mark.
+  Static and cheap — one radial gradient, no blur layers.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0 H108 V108 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="48"
+                android:gradientRadius="60">
+                <item android:offset="0" android:color="#FF1B1409" />
+                <item android:offset="0.6" android:color="#FF0C0B0A" />
+                <item android:offset="1" android:color="#FF08080A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>
