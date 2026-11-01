@@ -6,8 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# `contents: write` is required to create the GitHub release and attach the
+# APK to it; the build itself only needs to read the repository.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -90,3 +92,25 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      # The artifact above is only reachable from the Actions tab and expires;
+      # this publishes the signed APK where users can actually download it.
+      # Re-running the workflow replaces the attached APK instead of failing.
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          apk="ljod-${GITHUB_REF_NAME#v}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "${apk}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists; replacing its APK."
+            gh release upload "${GITHUB_REF_NAME}" "${apk}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${apk}" \
+              --title "Ljod ${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --verify-tag
+          fi
+          gh release view "${GITHUB_REF_NAME}" --json url --jq '"Published " + .url'
