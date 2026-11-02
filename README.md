@@ -1,107 +1,120 @@
 # Ljod
 
 A local-first audio player forged by Veridian Zenith. Ljod reads the music
-already on your device, keeps metadata offline, and pairs an amber-on-black
+already on your device, keeps everything offline, and pairs an amber-on-black
 blueprint aesthetic with Material 3 Expressive geometry.
+
+<p align="center">
+  <img src="screenshots/home.png" alt="Home" width="30%">
+  <img src="screenshots/library.png" alt="Library" width="30%">
+  <img src="screenshots/player.png" alt="Player" width="30%">
+</p>
+<p align="center">
+  <img src="screenshots/lyrics.png" alt="Synced lyrics" width="30%">
+  <img src="screenshots/insights.png" alt="Listening insights" width="30%">
+  <img src="screenshots/settings.png" alt="Settings" width="30%">
+</p>
 
 ## Features
 
-- MediaStore-backed Android library scan (desktop folders as a dev fallback)
-- Embedded tag + cover-art extraction, cached artwork, SQLite library cache
+- MediaStore-backed Android library scan, with desktop folders as a dev fallback
+- Embedded tag and cover-art extraction, bounded artwork cache, SQLite library cache
 - Background playback and media notification via `just_audio` + `audio_service`
-- Queue, shuffle, repeat, favourites, play history
-- Synced and plain lyrics: sidecar `.lrc`, embedded tags, and an opt-in
-  (off by default) LRCLIB lookup
-- True-black OLED surfaces, with only motion, lyrics lookup and
-  favourites-first sorting exposed as persistent settings
+- Queue, shuffle, repeat, favourites and play history
+- Synced and plain lyrics: sidecar `.lrc`/`.txt`, embedded tags, and an opt-in
+  (off by default) LRCLIB lookup with on-disk caching
+- Listening insights: most-played tracks, top artists, approximate listening time
+- Folder rules (`all` / `only` / `exclude`, applied recursively)
+- True-black OLED surfaces, with only motion, lyrics lookup, favorites-first
+  sorting and folder rules exposed as persistent settings
+- On-device diagnostics log, so a crash is readable without developer options
+
+## Install
+
+Grab the signed APK from the
+[releases page](https://github.com/Veridian-Zenith/ljod/releases). Android 15
+(API 35) or newer is required.
+
+## Build from source
+
+```sh
+flutter pub get
+flutter run
+flutter analyze
+flutter test
+```
+
+See [docs/BUILDING.md](docs/BUILDING.md) for toolchain versions, Gradle details
+and the two `local.properties` files.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | layers, startup, library pipeline, database, playback, lyrics, limits |
+| [docs/BUILDING.md](docs/BUILDING.md) | requirements, commands, Gradle, versioning |
+| [docs/RELEASING.md](docs/RELEASING.md) | version bump, signing secrets, tag builds, verification |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | what is stored, permissions, the single outbound request |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | empty library, missing art or lyrics, build and signing errors |
+| [docs/FAQ.md](docs/FAQ.md) | formats, offline behaviour, folder rules, backups |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | setup, code conventions, tests, commits |
+| [CHANGELOG.md](CHANGELOG.md) | release history |
 
 ## Privacy
 
 Everything stays on the device: the library lives in a local SQLite file, and
 artwork and lyric caches sit in the app support directory. There is no account,
-no analytics, no crash reporting and no ads. The only outbound request is the
-LRCLIB lyrics lookup, which is **off by default** and, when enabled, sends just
-the track title, artist, album (if set) and duration — never audio or file
-paths. Each track is looked up **once**: the answer (including "no lyrics" and
-"instrumental") is cached on disk, and nothing is re-requested unless you
-refresh it from the lyrics sheet or clear the cache in Settings.
+no analytics, no crash reporting and no ads.
+
+The only outbound request is the LRCLIB lyrics lookup, which is **off by
+default** and, when enabled, sends just the track title, artist, album (if set)
+and duration — never audio or file paths. Each track is looked up **once**: the
+answer (including "no lyrics" and "instrumental") is cached on disk, and nothing
+is re-requested unless you refresh it from the lyrics sheet or clear the cache
+in Settings.
+
+Full detail in [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Stack
 
-- Flutter 3.47+ / Dart 3.13+
+- Flutter 3.47.9 / Dart 3.13+
 - `material_ui` 1.9 (`StyleVariant.material3Expressive`)
-- Riverpod 3, `just_audio`, `audio_service`, `sqflite`, `shared_preferences`
+- Riverpod 3, `just_audio`, `audio_service`, `sqflite`, `shared_preferences`, `dio`
 - Bundled JetBrains Mono (no runtime font downloads)
+- Gradle 9.8.2, AGP 9.4.1, Kotlin 2.4.20 (AGP built-in Kotlin), JDK 21
 
 ## Android
 
-The app targets Android 15+ (`minSdk 35`). `MainActivity` extends
-`AudioServiceFragmentActivity` and exposes the `dev.vz.ljod/media` method
-channel used to query MediaStore.
+`MainActivity` extends `AudioServiceFragmentActivity` and exposes the
+`dev.vz.ljod/media` method channel used to query MediaStore. Package and
+namespace are `dev.vz.ljod` throughout; `minSdk 35`, `targetSdk 37`.
+
+## Releasing
+
+A tag push builds, signs, verifies and publishes the APK — no keystore is ever
+committed. Signing material is passed as **content** (`ANDROID_KEYSTORE_BASE64`),
+not as a path into the checkout.
 
 ```sh
-flutter pub get
-flutter run          # device build/install
-flutter analyze
-flutter test
+# after bumping pubspec.yaml + lib/core/app_info.dart
+git tag v0.3.1 && git push origin v0.3.1
 ```
 
-Gradle wrapper/AGP/Kotlin versions live under `android/`; builds are run from
-your normal Flutter tooling.
+The workflow checks the tag against the pubspec, builds with the four repository
+secrets, verifies the signature with `apksigner`, removes the decoded key, and
+publishes the release. Full procedure, secret names and local signing are in
+[docs/RELEASING.md](docs/RELEASING.md).
 
-## Signing
+## CI
 
-**The keystore is never committed, and nothing in the repository references a
-keystore path.** Release signing takes the key as *content* and the build works
-it out from there:
+`.github/workflows/ci.yml` runs on every push to `main`/`master` and on every
+pull request: formatting check, `flutter analyze`, `flutter test`, then a debug
+APK build (gated on the first three). Releases run from
+`.github/workflows/release.yml` on `v*` tags.
 
-| Input | Used for |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | The keystore itself, base64 encoded. CI passes this from a repository secret. |
-| `ANDROID_KEYSTORE_PATH` | Optional absolute path to a key kept outside this repository, for local release builds. |
-| `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | Credentials; read from the environment first, then `local.properties`. |
+## License
 
-When `ANDROID_KEYSTORE_BASE64` is present Gradle decodes it into
-`android/.gradle-signing/ljod-upload.p12` (git-ignored, outside `build/` so a
-`clean` cannot delete it mid-build) and signs from there. With no key
-configured the build still configures, prints that no signing key was found,
-and a release build fails rather than shipping unsigned.
-
-### Releasing
-
-1. Bump `version:` in `pubspec.yaml` **and** `LjodAppInfo` in
-   `lib/core/app_info.dart`. `test/app_info_test.dart` fails if they disagree.
-2. Commit, then push a tag matching the version name: `git tag v0.3.0 && git push origin v0.3.0`.
-3. `.github/workflows/release.yml` checks the tag against the pubspec, builds
-   and signs the APK from `ANDROID_KEYSTORE_BASE64`, verifies the signature
-   with `apksigner`, deletes the decoded key, and uploads the APK.
-
-The repository secrets expected by the workflow are `ANDROID_KEYSTORE_BASE64`,
-`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
-Rotate them with `gh secret set <NAME> --repo Veridian-Zenith/ljod`, piping the
-value in rather than passing it as an argument.
-
-To sign a release locally, keep the key outside the checkout and point the
-git-ignored `local.properties` at it, so `flutter build apk --release` needs no
-extra environment:
-
-```properties
-ANDROID_KEYSTORE_PATH=/home/you/.config/ljod/ljod-upload.p12
-ANDROID_KEYSTORE_PASSWORD=...
-ANDROID_KEY_ALIAS=...
-ANDROID_KEY_PASSWORD=...
-```
-
-Or pass the same values for one build:
-
-```sh
-ANDROID_KEYSTORE_PATH=/absolute/path/to/outside/key.p12 \
-ANDROID_KEYSTORE_PASSWORD=... ANDROID_KEY_ALIAS=... ANDROID_KEY_PASSWORD=... \
-flutter build apk --release
-```
-
-A relative path is resolved from `android/` and then from the repository root.
-If the configured path does not resolve to a file, Gradle prints which path it
-tried (`Ljod: no signing key. ANDROID_KEYSTORE_PATH='…' does not point at an
-existing file.`) instead of only AGP's `Keystore file not set for signing config
-release`.
+[Open Software License 3.0](LICENSE) — Copyright (c) 2026 Veridian Zenith.
+You may use, modify and redistribute Ljod, including commercially, provided
+distributed copies and derivative works remain under the same licence and
+attribution notices are preserved.
