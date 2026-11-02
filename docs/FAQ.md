@@ -64,7 +64,7 @@ lyrics lookup are user-configurable — see [ARCHITECTURE.md](ARCHITECTURE.md).
 ### How do I get the APK?
 
 Releases are published on the
-[releases page](https://github.com/Veridian-Zenith/ljod/releases) with a signed
+[releases page](https://git.gay/Veridian-Zenith/ljod/releases) with a signed
 `ljod-<version>.apk`. Builds from source are covered in
 [BUILDING.md](BUILDING.md).
 

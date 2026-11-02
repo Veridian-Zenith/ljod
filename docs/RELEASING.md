@@ -1,8 +1,8 @@
 # Releasing
 
 A release is a tag push. The workflow builds a signed APK, verifies the
-signature, and publishes it as a GitHub release. No keystore ever lives in the
-repository.
+signature, and publishes it as a release on git.gay through the Forgejo API. No
+keystore ever lives in the repository.
 
 ## 1. Bump the version
 
@@ -47,8 +47,9 @@ git push origin v0.3.1
 4. **Clean up** — deletes the decoded keystore (`if: always()`, so it happens
    even on failure).
 5. **Upload artifact** — `ljod-<version>`, kept 30 days.
-6. **Publish release** — creates the GitHub release for the tag with
-   `ljod-<versionName>.apk` attached. Re-running the workflow replaces the
+6. **Publish release** — creates the Forgejo release for the tag with
+   `ljod-<versionName>.apk` attached, using the REST API and the per-run job
+   token (Forgejo has no `gh release`). Re-running the workflow replaces the
    asset rather than failing.
 
 ## Signing contract
@@ -81,12 +82,17 @@ The base64 value is decoded into `android/.gradle-signing/ljod-upload.p12`
 | `ANDROID_KEY_ALIAS` | key alias inside the keystore |
 | `ANDROID_KEY_PASSWORD` | key password |
 
-Set or rotate them without pasting values into a shell history or chat:
+They live in the repository: **Settings → Actions → Secrets → Add secret**.
+Paste values into the web form rather than a shell history or chat. The keystore
+secret is the base64 **content**, so it is the one worth generating locally and
+copying straight to the clipboard:
 
 ```sh
-base64 -w0 /path/outside/repo/ljod-upload.p12 | gh secret set ANDROID_KEYSTORE_BASE64 --repo Veridian-Zenith/ljod
-gh secret set ANDROID_KEYSTORE_PASSWORD --repo Veridian-Zenith/ljod   # then paste at the prompt
+base64 -w0 /path/outside/repo/ljod-upload.p12 | xclip -selection clipboard
 ```
+
+The API equivalent is
+`PUT /api/v1/repos/Veridian-Zenith/ljod/actions/secrets/{name}`.
 
 `ANDROID_KEYSTORE` (an older secret) is no longer read by anything.
 
@@ -129,8 +135,11 @@ The APK's `V2 Signer: certificate SHA-256 digest` must match the keystore's
 Also worth checking after a release:
 
 ```sh
-gh release view v0.3.1 --json tagName,isDraft,assets
+curl -sS https://git.gay/api/v1/repos/Veridian-Zenith/ljod/releases/tags/v0.3.1 \
+  | python3 -m json.tool | head -30
 ```
+
+or open <https://git.gay/Veridian-Zenith/ljod/releases>.
 
 ## Re-tagging an existing version
 
@@ -139,7 +148,8 @@ tag was pushed before a workflow change, re-pushing the *same* tag re-runs the
 *old* workflow. Move the tag instead:
 
 ```sh
-gh release delete v0.3.1 --yes --cleanup-tag
+# Forgejo has no gh: delete the release in the web UI, or via
+# DELETE /api/v1/repos/Veridian-Zenith/ljod/releases/{id}, then move the tag.
 git tag -d v0.3.1
 git tag v0.3.1 <commit>
 git push origin v0.3.1

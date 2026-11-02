@@ -6,8 +6,8 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# `contents: write` is required to create the GitHub release and attach the
-# APK to it; the build itself only needs to read the repository.
+# Publishing the release writes to the repository, which the job token carries
+# on Forgejo; the build itself only needs to read the checkout.
 permissions:
   contents: write
 
@@ -28,8 +28,10 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # Absolute URL: Forgejo's action mirror (data.forgejo.org) does not carry
+      # subosito/flutter-action, so a bare reference fails to resolve.
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: https://github.com/subosito/flutter-action@v2
         with:
           flutter-version: '3.47.9'
           channel: stable
@@ -94,23 +96,52 @@ jobs:
           retention-days: 30
 
       # The artifact above is only reachable from the Actions tab and expires;
-      # this publishes the signed APK where users can actually download it.
-      # Re-running the workflow replaces the attached APK instead of failing.
-      - name: Publish GitHub release
+      # this publishes the signed APK where users can download it.
+      #
+      # GitHub's `gh release` speaks github.com only, so this talks to the
+      # Forgejo REST API directly with the per-run job token. Re-running
+      # replaces the attached APK instead of failing on a name clash.
+      - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          apk="ljod-${GITHUB_REF_NAME#v}.apk"
+          api="${SERVER}/api/v1/repos/${REPO}"
+          auth="Authorization: token ${TOKEN}"
+          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '[:space:]')"
+          apk="ljod-${version%%+*}.apk"
           cp build/app/outputs/flutter-apk/app-release.apk "${apk}"
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            echo "Release ${GITHUB_REF_NAME} already exists; replacing its APK."
-            gh release upload "${GITHUB_REF_NAME}" "${apk}" --clobber
-          else
-            gh release create "${GITHUB_REF_NAME}" "${apk}" \
-              --title "Ljod ${GITHUB_REF_NAME}" \
-              --generate-notes \
-              --verify-tag
+
+          status="$(curl -sS -o /tmp/release.json -w '%{http_code}' \
+            -H "${auth}" "${api}/releases/tags/${TAG}")"
+          if [ "${status}" = "404" ]; then
+            echo "No release for ${TAG} yet; creating one."
+            curl -sS -f -X POST "${api}/releases" \
+              -H "${auth}" -H 'Content-Type: application/json' \
+              -d "{\"tag_name\":\"${TAG}\",\"name\":\"Ljod ${TAG}\"}" \
+              > /tmp/release.json
+          elif [ "${status}" != "200" ]; then
+            echo "Could not look up the release for ${TAG} (HTTP ${status}):" >&2
+            cat /tmp/release.json >&2
+            exit 1
           fi
-          gh release view "${GITHUB_REF_NAME}" --json url --jq '"Published " + .url'
+
+          release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' /tmp/release.json)"
+
+          # Re-runs must replace the asset, not fail on a name clash.
+          stale="$(curl -sS -f -H "${auth}" "${api}/releases/${release_id}/assets" \
+            | python3 -c 'import json,sys; n=sys.argv[1]; print(" ".join(str(a["id"]) for a in json.load(sys.stdin) if a["name"]==n))' "${apk}")"
+          for asset_id in ${stale}; do
+            echo "Removing stale asset ${asset_id}."
+            curl -sS -f -X DELETE -H "${auth}" \
+              "${api}/releases/${release_id}/assets/${asset_id}" -o /dev/null
+          done
+
+          curl -sS -f -X POST -H "${auth}" \
+            -F "attachment=@${apk}" \
+            "${api}/releases/${release_id}/assets?name=${apk}" -o /dev/null
+          echo "Published ${apk} to ${SERVER}/${REPO}/releases/tag/${TAG}"

@@ -11,7 +11,7 @@ All notable changes to Ljod are documented here. The format follows
 - CI workflow (`.github/workflows/ci.yml`) that runs formatting, `flutter analyze`,
   the test suite and a debug APK build on every push to `main`/`master` and on
   every pull request; the APK job is gated on the cheap checks.
-- Release workflow now publishes a GitHub release with the signed
+- Release workflow publishes a Forgejo release on git.gay with the signed
   `ljod-<version>.apk` attached, replacing the asset when re-run.
 
 ### Changed
@@ -20,6 +20,10 @@ All notable changes to Ljod are documented here. The format follows
   (`ANDROID_KEYSTORE_BASE64`), decoded to a git-ignored path outside `build/`;
   the previous in-repository keystore path is no longer used anywhere.
 - Gradle wrapper updated to 9.8.2 with pinned distribution checksums.
+- CI and release workflows run on Forgejo Actions: the Flutter setup action is
+  referenced by absolute URL (`https://github.com/subosito/flutter-action@v2`)
+  because the instance's action mirror does not carry it, and the release step
+  uses the Forgejo REST API because `gh` only speaks github.com.
 
 ### Fixed
 
@@ -59,5 +63,5 @@ All notable changes to Ljod are documented here. The format follows
 
 Initial scaffold: bundle metadata, theme shell and placeholder screens.
 
-[Unreleased]: https://github.com/Veridian-Zenith/ljod/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/Veridian-Zenith/ljod/releases/tag/v0.3.0
+[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.3.0...HEAD
+[0.3.0]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.0

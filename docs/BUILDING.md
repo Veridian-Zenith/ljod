@@ -32,8 +32,9 @@ flutter test                                      # full suite, ~40 cases
 dart format --output=none --set-exit-if-changed lib test
 ```
 
-These three, plus a debug APK build, are what CI runs on every push to `main`
-or `master` and on every pull request (`.github/workflows/ci.yml`).
+These three, plus a debug APK build, are what CI runs on Forgejo Actions (git.gay)
+for every push to `main` or `master` and every pull request
+(`.github/workflows/ci.yml`).
 
 ## Android builds
 

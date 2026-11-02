@@ -32,7 +32,7 @@ blueprint aesthetic with Material 3 Expressive geometry.
 ## Install
 
 Grab the signed APK from the
-[releases page](https://github.com/Veridian-Zenith/ljod/releases). Android 15
+[releases page](https://git.gay/Veridian-Zenith/ljod/releases). Android 15
 (API 35) or newer is required.
 
 ## Build from source
@@ -107,10 +107,11 @@ publishes the release. Full procedure, secret names and local signing are in
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main`/`master` and on every
-pull request: formatting check, `flutter analyze`, `flutter test`, then a debug
-APK build (gated on the first three). Releases run from
-`.github/workflows/release.yml` on `v*` tags.
+`.github/workflows/ci.yml` runs on Forgejo Actions (git.gay) for every push to
+`main`/`master` and every pull request: formatting check, `flutter analyze`,
+`flutter test`, then a debug APK build gated on the first three. Releases run
+from `.github/workflows/release.yml` on `v*` tags and publish through the
+Forgejo API.
 
 ## License
 

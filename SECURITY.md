@@ -3,7 +3,7 @@
 ## Supported versions
 
 Only the latest released version receives fixes. Ljod is distributed as a signed
-APK from the [releases page](https://github.com/Veridian-Zenith/ljod/releases).
+APK from the [releases page](https://git.gay/Veridian-Zenith/ljod/releases).
 
 | Version | Supported |
 | --- | --- |
@@ -12,13 +12,12 @@ APK from the [releases page](https://github.com/Veridian-Zenith/ljod/releases).
 
 ## Reporting a vulnerability
 
-Please **do not** open a public issue for anything security-sensitive. Use
-GitHub's private reporting instead:
+Please **do not** open a public issue for anything security-sensitive. Forgejo
+has no private advisory system, so report to the maintainer privately instead —
+the contact details are on <https://git.gay/Veridian-Zenith>.
 
-<https://github.com/Veridian-Zenith/ljod/security/advisories/new>
-
-That opens a draft advisory visible only to the maintainers. Include the
-affected version, the platform, reproduction steps, and what an attacker gains.
+Include the affected version, the platform, reproduction steps, and what an
+attacker gains.
 
 You can expect an acknowledgement within a few days. Once a fix is released the
 advisory is published with credit, unless you ask to remain anonymous.
