@@ -81,7 +81,7 @@ jobs:
           yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
 
           "${manager}" --sdk_root="${sdk}" --install \
-            "platform-tools" "platforms;android-canary-20261007" "build-tools;37.0.0"
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 
           echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
