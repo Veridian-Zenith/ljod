@@ -75,7 +75,7 @@ Only the root one is optional, and only for release builds.
 
 The version lives in exactly two places, and a test keeps them honest:
 
-1. `pubspec.yaml` → `version: 0.3.1+4`
+1. `pubspec.yaml` → `version: 0.3.2+5`
 2. `lib/core/app_info.dart` → `LjodAppInfo.version`, `versionName`, `buildNumber`
 
 `test/app_info_test.dart` fails if they disagree, or if the derived tag is not

@@ -6,6 +6,8 @@ All notable changes to Ljod are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-11-02
+
 ### Fixed
 
 - Text no longer fails to lay out when the system reports an unusable font scale
@@ -98,6 +100,7 @@ All notable changes to Ljod are documented here. The format follows
 
 Initial scaffold: bundle metadata, theme shell and placeholder screens.
 
-[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.3.1...HEAD
+[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.3.2...HEAD
+[0.3.2]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.2
 [0.3.1]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.1
 [0.3.0]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.0

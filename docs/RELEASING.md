@@ -10,13 +10,13 @@ Edit both places (see [BUILDING.md](BUILDING.md#versioning)):
 
 ```yaml
 # pubspec.yaml
-version: 0.3.1+4
+version: 0.3.2+5
 ```
 
 ```dart
 // lib/core/app_info.dart
-static const String version = '0.3.1+4';
-static const String versionName = '0.3.1';
+static const String version = '0.3.2+5';
+static const String versionName = '0.3.2';
 static const int buildNumber = 4;
 ```
 
@@ -29,10 +29,10 @@ flutter test test/app_info_test.dart   # fails if the two drifted
 The tag must be `v<versionName>` — no build number. The workflow enforces this.
 
 ```sh
-git commit -am "Release 0.3.1"
+git commit -am "Release 0.3.2"
 git push origin main
-git tag v0.3.1
-git push origin v0.3.1
+git tag v0.3.2
+git push origin v0.3.2
 ```
 
 A tag push is not the only way: the workflow can also be run by hand to rebuild
@@ -69,7 +69,7 @@ republished without moving a tag or bumping the version:
 **Actions → Release Build → Run workflow**, on the branch you want to build from.
 
 Leave `version` empty to publish whatever `pubspec.yaml` declares, or type a
-version (`0.3.1` and `v0.3.1` both work) to publish that release instead. The APK
+version (`0.3.2` and `v0.3.2` both work) to publish that release instead. The APK
 is built from the selected ref; the asset on that tag's release is replaced, and
 the release is created — with the tag pointing at the built commit — if it does
 not exist yet.
@@ -180,7 +180,7 @@ The APK's `V2 Signer: certificate SHA-256 digest` must match the keystore's
 Also worth checking after a release:
 
 ```sh
-curl -sS https://git.gay/api/v1/repos/Veridian-Zenith/ljod/releases/tags/v0.3.1 \
+curl -sS https://git.gay/api/v1/repos/Veridian-Zenith/ljod/releases/tags/v0.3.2 \
   | python3 -m json.tool | head -30
 ```
 
@@ -195,9 +195,9 @@ tag was pushed before a workflow change, re-pushing the *same* tag re-runs the
 ```sh
 # Forgejo has no gh: delete the release in the web UI, or via
 # DELETE /api/v1/repos/Veridian-Zenith/ljod/releases/{id}, then move the tag.
-git tag -d v0.3.1
-git tag v0.3.1 <commit>
-git push origin v0.3.1
+git tag -d v0.3.2
+git tag v0.3.2 <commit>
+git push origin v0.3.2
 ```
 
 ## Known history

@@ -97,7 +97,7 @@ not as a path into the checkout.
 
 ```sh
 # after bumping pubspec.yaml + lib/core/app_info.dart
-git tag v0.3.1 && git push origin v0.3.1
+git tag v0.3.2 && git push origin v0.3.2
 ```
 
 The workflow checks the tag against the pubspec, builds with the four repository
