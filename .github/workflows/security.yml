@@ -1,0 +1,67 @@
+name: Security
+
+# Replaces the GitHub-only CodeQL workflow. `github/codeql-action` is not on
+# Forgejo's action mirror and Forgejo has no code-scanning endpoint to upload
+# results to, so the original workflow could not run here at all. This keeps the
+# parts that are actionable for this repository, using nothing but the toolchain
+# the build already needs: analysis at a stricter level than ci.yml, a guard
+# against committed signing material, and a weekly dependency report.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: '25 15 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.9'
+
+jobs:
+  review:
+    name: Security review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # The runner's tool cache is unpacked under /opt/hostedtoolcache by
+      # another user, so git exits 128 with "dubious ownership" — fatal both to
+      # the setup action and to the Flutter tool's own git calls.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
+
+      # Absolute URL: Forgejo's action mirror does not carry this action.
+      - name: Set up Flutter
+        uses: https://github.com/subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Stricter than ci.yml, which tolerates infos and warnings: this job is
+      # the place where "no issues found" has to mean it.
+      - name: Static analysis
+        run: flutter analyze --fatal-warnings --fatal-infos
+
+      - name: Verify no signing material is tracked
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -Ei '\.(jks|p12|keystore)$|(^|/)keystore/|key\.properties'; then
+            echo "Signing material is tracked in git; it must never be committed." >&2
+            exit 1
+          fi
+          echo "No signing material tracked."
+
+      # Informational on purpose: a stale dependency is not a build failure, and
+      # this repository has no Dependabot on Forgejo to report them otherwise.
+      - name: Report outdated dependencies
+        continue-on-error: true
+        run: flutter pub outdated

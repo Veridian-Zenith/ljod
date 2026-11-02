@@ -111,7 +111,9 @@ publishes the release. Full procedure, secret names and local signing are in
 `main`/`master` and every pull request: formatting check, `flutter analyze`,
 `flutter test`, then a debug APK build gated on the first three. Releases run
 from `.github/workflows/release.yml` on `v*` tags and publish through the
-Forgejo API.
+Forgejo API. `.github/workflows/security.yml` replaces the GitHub-only CodeQL
+scan with fatal-level static analysis, a tracked-signing-material
+guard and a weekly dependency report.
 
 ## License
 

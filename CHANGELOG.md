@@ -24,6 +24,9 @@ All notable changes to Ljod are documented here. The format follows
   referenced by absolute URL (`https://github.com/subosito/flutter-action@v2`)
   because the instance's action mirror does not carry it, and the release step
   uses the Forgejo REST API because `gh` only speaks github.com.
+- The GitHub-only CodeQL workflow is replaced by `.github/workflows/security.yml`:
+  `flutter analyze --fatal-warnings --fatal-infos`, a check that no keystore or
+  `key.properties` is ever tracked, and a weekly `flutter pub outdated` report.
 - Dependabot configuration removed: Forgejo has no Dependabot, so dependency
   updates are manual (or a self-hosted Renovate against the same repo).
 
