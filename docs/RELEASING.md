@@ -40,17 +40,20 @@ git push origin v0.3.1
 `.github/workflows/release.yml`, triggered by `v*` tags (and manual dispatch):
 
 1. **Tag guard** — compares the tag with `pubspec.yaml` and stops on a mismatch.
-2. **Build** — `flutter build apk --release` with the four signing secrets as
-   environment variables; aborts if `ANDROID_KEYSTORE_BASE64` is empty rather
-   than shipping an unsigned APK.
-3. **Verify** — `apksigner verify --verbose` on the produced APK.
-4. **Clean up** — deletes the decoded keystore (`if: always()`, so it happens
+2. **Signing check** — decodes the keystore, then uses `keytool` to prove the
+   store password opens it, that the alias exists, and that the key password
+   unlocks the private key. A failure names the offending secret in seconds
+   instead of after a full build.
+3. **Build** — `flutter build apk --release` with the four signing secrets as
+   environment variables.
+4. **Verify** — `apksigner verify --verbose` on the produced APK.
+5. **Clean up** — deletes the decoded keystore (`if: always()`, so it happens
    even on failure).
-5. **Upload artifact** — `ljod-<version>`, kept 30 days.
 6. **Publish release** — creates the Forgejo release for the tag with
    `ljod-<versionName>.apk` attached, using the REST API and the per-run job
    token (Forgejo has no `gh release`). Re-running the workflow replaces the
-   asset rather than failing.
+   asset rather than failing. Nothing is uploaded as a workflow artifact: this
+   runner has no artifact service, so the release asset is the only copy.
 
 ## Signing contract
 
@@ -95,6 +98,25 @@ The API equivalent is
 `PUT /api/v1/repos/Veridian-Zenith/ljod/actions/secrets/{name}`.
 
 `ANDROID_KEYSTORE` (an older secret) is no longer read by anything.
+
+### If the build cannot read the key
+
+`Failed to read key <alias> from store "...": null` from `packageRelease` means
+the keystore opened but the private key did not, which in practice is a wrong or
+empty `ANDROID_KEY_PASSWORD`. This keystore is PKCS12, so its key password is the
+same string as `ANDROID_KEYSTORE_PASSWORD` — paste the two from the same source.
+
+The `Verify the signing secrets` step catches this before the build starts. On a
+tag that predates that step, check by hand:
+
+```sh
+keytool -list -keystore ljod-upload.p12 -storepass "$ANDROID_KEYSTORE_PASSWORD"
+keytool -certreq -keystore ljod-upload.p12 -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+  -alias ljod -keypass "$ANDROID_KEY_PASSWORD" -file /tmp/check.csr
+```
+
+The first must list `ljod`; the second writes a certificate request only when
+the key password is right.
 
 ### Local signed build
 

@@ -98,6 +98,73 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # A wrong key password otherwise surfaces only when Gradle reaches
+      # packageRelease, minutes in, as "Failed to read key <alias> from store
+      # ...: null" with no hint about which secret is wrong. Check the material
+      # first, while the build is still cheap.
+      - name: Verify the signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          missing=""
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD \
+                      ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "$(printenv "${name}" || true)" ]; then
+              missing="${missing} ${name}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "Missing or empty repository secrets:${missing}" >&2
+            echo "Add them under Settings -> Actions -> Secrets." >&2
+            exit 1
+          fi
+
+          store="${RUNNER_TEMP:-/tmp}/signing-check.p12"
+          csr="${RUNNER_TEMP:-/tmp}/signing-check.csr"
+          trap 'rm -f "${store}" "${csr}"' EXIT
+
+          if ! printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${store}"; then
+            echo "ANDROID_KEYSTORE_BASE64 is not valid base64." >&2
+            exit 1
+          fi
+          echo "Keystore decoded: $(wc -c < "${store}") bytes."
+
+          # Loading the store verifies its MAC, so this fails only on a wrong or
+          # wrapped store password.
+          if ! keytool -list -keystore "${store}" \
+                 -storepass "${ANDROID_KEYSTORE_PASSWORD}" > /dev/null 2>&1; then
+            echo "ANDROID_KEYSTORE_PASSWORD does not open the keystore." >&2
+            exit 1
+          fi
+          echo "ANDROID_KEYSTORE_PASSWORD opens the keystore."
+
+          if ! keytool -list -keystore "${store}" -alias "${ANDROID_KEY_ALIAS}" \
+                 -storepass "${ANDROID_KEYSTORE_PASSWORD}" > /dev/null 2>&1; then
+            echo "ANDROID_KEY_ALIAS '${ANDROID_KEY_ALIAS}' is not in the keystore." >&2
+            exit 1
+          fi
+          echo "ANDROID_KEY_ALIAS '${ANDROID_KEY_ALIAS}' is present."
+
+          # A certificate request has to reach the private key, so this fails
+          # exactly when the key password is wrong. It writes only a throwaway
+          # file and needs no network.
+          if ! keytool -certreq -keystore "${store}" \
+                 -storepass "${ANDROID_KEYSTORE_PASSWORD}" \
+                 -alias "${ANDROID_KEY_ALIAS}" \
+                 -keypass "${ANDROID_KEY_PASSWORD}" \
+                 -file "${csr}" > /dev/null 2>&1; then
+            echo "ANDROID_KEY_PASSWORD does not unlock '${ANDROID_KEY_ALIAS}'." >&2
+            echo "This keystore is PKCS12, so the key password must equal" \
+                 "ANDROID_KEYSTORE_PASSWORD." >&2
+            exit 1
+          fi
+          echo "ANDROID_KEY_PASSWORD unlocks '${ANDROID_KEY_ALIAS}'."
+
       # The keystore is passed as content, never as a path: nothing has to exist
       # in the repository, and the workflow never writes the key to a tracked
       # location. Gradle decodes it into its disposable build/ directory.
@@ -109,10 +176,6 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
-            echo "ANDROID_KEYSTORE_BASE64 is empty; refusing to publish an unsigned build." >&2
-            exit 1
-          fi
           flutter build apk --release
 
       - name: Verify the APK is signed
