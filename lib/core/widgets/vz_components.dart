@@ -333,6 +333,65 @@ class Panel extends StatelessWidget {
   }
 }
 
+/// The floating bar surface: mini player, transport, seek bar, up-next strip
+/// and the navigation bar.
+///
+/// One token for all of them, so the stack reads as a single material rather
+/// than five containers that happen to be round. [accent] marks the surfaces
+/// that carry playback: they get an amber hairline and a lifted fill.
+class LjodBar extends StatelessWidget {
+  const LjodBar({
+    super.key,
+    required this.child,
+    this.padding = EdgeInsets.zero,
+    this.accent = false,
+    this.onTap,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final bool accent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = StadiumBorder(
+      side: BorderSide(
+        color: accent
+            ? LjodTheme.amber.withValues(alpha: 0.30)
+            : LjodTheme.borderLight,
+        width: 1,
+      ),
+    );
+
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: accent
+            ? LjodTheme.panelHigh.withValues(alpha: 0.97)
+            : LjodTheme.panelBlack.withValues(alpha: 0.94),
+        shape: shape,
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: shape,
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+  }
+}
+
 /// Numeric summary card shared by the Library stats row and Insights.
 ///
 /// [dense] keeps the compact Library footprint; the default is the taller
@@ -669,6 +728,7 @@ class LjodSlider extends StatelessWidget {
     this.onChangeEnd,
     this.buffered,
     this.activeColor = LjodTheme.amber,
+    this.height = 36,
   });
 
   final double value;
@@ -680,23 +740,33 @@ class LjodSlider extends StatelessWidget {
   final double? buffered;
   final Color activeColor;
 
+  /// Rendered height. Material's default slider is 48 tall, which alone made
+  /// the seek bar look like a slab; the track and thumb are scaled to match.
+  final double height;
+
   @override
   Widget build(BuildContext context) {
     final safeMax = max <= 0 ? 1.0 : max;
-    return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        activeTrackColor: activeColor,
-        // Buffered audio needs to read as a track, not a stray dot.
-        secondaryActiveTrackColor: activeColor.withValues(alpha: 0.45),
-        thumbColor: activeColor,
-        overlayColor: activeColor.withValues(alpha: 0.14),
-      ),
-      child: Slider(
-        value: value.clamp(0, safeMax),
-        max: safeMax,
-        secondaryTrackValue: buffered?.clamp(0, safeMax),
-        onChanged: onChanged,
-        onChangeEnd: onChangeEnd,
+    return SizedBox(
+      height: height,
+      child: SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          activeTrackColor: activeColor,
+          // Buffered audio needs to read as a track, not a stray dot.
+          secondaryActiveTrackColor: activeColor.withValues(alpha: 0.45),
+          thumbColor: activeColor,
+          overlayColor: activeColor.withValues(alpha: 0.14),
+          trackHeight: 5,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+        ),
+        child: Slider(
+          value: value.clamp(0, safeMax),
+          max: safeMax,
+          secondaryTrackValue: buffered?.clamp(0, safeMax),
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        ),
       ),
     );
   }

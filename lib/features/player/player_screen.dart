@@ -397,23 +397,17 @@ class _SeekBarState extends State<_SeekBar> {
     final value = (_dragValue ?? live).clamp(0.0, max);
     final shown = Duration(milliseconds: value.round());
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-      decoration: ShapeDecoration(
-        color: LjodTheme.panelBlack.withValues(alpha: 0.9),
-        shape: MaterialShapeBorder(
-          shape: MaterialShapes.pill,
-          squash: 1,
-          side: BorderSide(
-            color: LjodTheme.borderStrong.withValues(alpha: 0.35),
-          ),
-        ),
-      ),
+    // A capsule's caps are half the bar's height, so anything inside that band
+    // has to clear the curve or it gets sliced. The time labels sit exactly in
+    // that band, hence the wide side padding.
+    return LjodBar(
+      padding: const EdgeInsets.fromLTRB(30, 4, 30, 10),
       child: Column(
         children: [
           LjodSlider(
             value: value,
             max: max,
+            height: 32,
             buffered: widget.buffered.inMilliseconds.toDouble(),
             onChanged: (next) => setState(() => _dragValue = next),
             onChangeEnd: (next) {
@@ -421,7 +415,7 @@ class _SeekBarState extends State<_SeekBar> {
               widget.onSeek(Duration(milliseconds: next.round()));
             },
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 2),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Row(
@@ -433,8 +427,8 @@ class _SeekBarState extends State<_SeekBar> {
                   onTap: () => widget.onSeekBy(const Duration(seconds: -10)),
                   tooltip: 'Back 10 seconds',
                   shape: MaterialShapes.circle,
-                  size: 19,
-                  padding: 7,
+                  size: 18,
+                  padding: 6,
                 ),
                 const SizedBox(width: 10),
                 ShapeIconButton(
@@ -442,8 +436,8 @@ class _SeekBarState extends State<_SeekBar> {
                   onTap: () => widget.onSeekBy(const Duration(seconds: 10)),
                   tooltip: 'Forward 10 seconds',
                   shape: MaterialShapes.circle,
-                  size: 19,
-                  padding: 7,
+                  size: 18,
+                  padding: 6,
                 ),
                 const Spacer(),
                 Text(
@@ -504,18 +498,10 @@ class _Transport extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repeatActive = repeat != AudioServiceRepeatMode.none;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-      decoration: ShapeDecoration(
-        // The bar itself is a Material 3 pill so the controls read as a unit.
-        // On a true-black surface the fill needs to be lifted to stay visible.
-        color: LjodTheme.panelHighest.withValues(alpha: 0.85),
-        shape: MaterialShapeBorder(
-          shape: MaterialShapes.pill,
-          squash: 1,
-          side: BorderSide(color: LjodTheme.amber.withValues(alpha: 0.22)),
-        ),
-      ),
+    // No surface: the transport buttons are the shape here. A capsule behind
+    // them only added a second outline competing with their own outlines.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -540,8 +526,8 @@ class _Transport extends StatelessWidget {
           PlayPauseButton(
             playing: playing,
             onTap: onPlayPause,
-            size: 70,
-            iconSize: 32,
+            size: 60,
+            iconSize: 28,
           ),
           ShapeIconButton(
             icon: Icons.skip_next_rounded,
@@ -590,84 +576,67 @@ class _UpNextStrip extends ConsumerWidget {
     final song = ref.watch(songByIdProvider(item.id));
     final controller = ref.read(playbackControllerProvider);
     final theme = Theme.of(context);
-    final outfit = MaterialShapeBorder(
-      shape: MaterialShapes.pill,
-      squash: 1,
-      side: BorderSide(color: LjodTheme.borderLight.withValues(alpha: 0.7)),
-    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Material(
-        color: Colors.transparent,
-        child: Ink(
-          decoration: ShapeDecoration(
-            color: LjodTheme.panelBlack.withValues(alpha: 0.55),
-            shape: outfit,
-          ),
-          child: InkWell(
-            customBorder: outfit,
-            onTap: () => controller.playFromQueue(index + 1),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
-              child: Row(
+      child: LjodBar(
+        onTap: () => controller.playFromQueue(index + 1),
+        padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+        child: Row(
+          children: [
+            Text(
+              'UP NEXT',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: LjodTheme.amber,
+                letterSpacing: 1.6,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 12),
+            CoverArt(
+              path: song?.artworkPath,
+              size: 30,
+              radius: 9,
+              label: item.title,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'UP NEXT',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: LjodTheme.amber,
-                      letterSpacing: 1.6,
-                      fontWeight: FontWeight.w700,
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: LjodTheme.textStrong,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  CoverArt(
-                    path: song?.artworkPath,
-                    size: 30,
-                    radius: 9,
-                    label: item.title,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: LjodTheme.textStrong,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (item.artist != null && item.artist!.isNotEmpty)
-                          Text(
-                            item.artist!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: LjodTheme.textMuted,
-                            ),
-                          ),
-                      ],
+                  if (item.artist != null && item.artist!.isNotEmpty)
+                    Text(
+                      item.artist!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: LjodTheme.textMuted,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    onPressed: onQueue,
-                    tooltip: 'Queue',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(
-                      Icons.queue_music_rounded,
-                      size: 18,
-                      color: LjodTheme.textMuted,
-                    ),
-                  ),
                 ],
               ),
             ),
-          ),
+            const SizedBox(width: 6),
+            IconButton(
+              onPressed: onQueue,
+              tooltip: 'Queue',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(
+                Icons.queue_music_rounded,
+                size: 18,
+                color: LjodTheme.textMuted,
+              ),
+            ),
+          ],
         ),
       ),
     );

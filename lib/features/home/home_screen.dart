@@ -224,15 +224,28 @@ class _Header extends StatelessWidget {
               ),
             )
           else ...[
-            IconButton(
-              onPressed: onInsights,
-              tooltip: 'Insights',
-              icon: const Icon(Icons.insights_rounded),
-            ),
-            IconButton(
-              onPressed: onRescan,
-              tooltip: 'Rescan device',
-              icon: const Icon(Icons.radar_rounded),
+            // Same button vocabulary as the player and the bars: bare Material
+            // icon buttons were the only uncontained controls left in the UI.
+            const SizedBox(width: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GlowIconButton(
+                  icon: Icons.insights_rounded,
+                  onTap: onInsights,
+                  tooltip: 'Insights',
+                  size: 18,
+                  padding: 9,
+                ),
+                const SizedBox(width: 6),
+                GlowIconButton(
+                  icon: Icons.radar_rounded,
+                  onTap: onRescan,
+                  tooltip: 'Rescan device',
+                  size: 18,
+                  padding: 9,
+                ),
+              ],
             ),
           ],
         ],

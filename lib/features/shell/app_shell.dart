@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -124,101 +122,97 @@ class _MiniPlayer extends StatelessWidget {
         ? 0.0
         : (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
 
+    final subtitle = song.album.isEmpty
+        ? song.displayArtist
+        : '${song.displayArtist} · ${song.album}';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Material(
-        color: Colors.transparent,
-        // Matches the player transport so the mini bar reads as the same object.
-        shape: MaterialShapeBorder(shape: MaterialShapes.pill, squash: 1),
-        clipBehavior: Clip.antiAlias,
-        // Light frosted glass: the blur is confined to the ~80px bar, so the
-        // backdrop-filter cost stays small and the list beneath reads as depth.
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-          child: Material(
-            color: LjodTheme.panelHigh.withValues(alpha: 0.70),
-            child: InkWell(
-              onTap: onTap,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 2,
-                    backgroundColor: LjodTheme.panelHighest,
-                    color: LjodTheme.amber,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-                    child: Row(
-                      children: [
-                        SongCover(song: song, size: 44, radius: 14),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                song.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: LjodTheme.textStrong,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  if (playing)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 6),
-                                      child: EqualizerBars(height: 10, bars: 3),
-                                    ),
-                                  Expanded(
-                                    child: Text(
-                                      song.displayArtist,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: LjodTheme.textMuted,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        IconButton(
-                          onPressed: onPlayPause,
-                          icon: Icon(
-                            playing
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                          ),
-                          color: LjodTheme.amber,
-                          iconSize: 26,
-                          tooltip: playing ? 'Pause' : 'Play',
-                        ),
-                        IconButton(
-                          onPressed: onNext,
-                          icon: const Icon(Icons.skip_next_rounded),
-                          color: LjodTheme.textSoft,
-                          iconSize: 24,
-                          tooltip: 'Next',
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+      child: LjodBar(
+        accent: true,
+        onTap: onTap,
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Inset and rounded: at the very top edge of a capsule the curve
+            // clips a full-bleed line down to a stub in the middle.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 3,
+                  backgroundColor: LjodTheme.borderLight,
+                  color: LjodTheme.amber,
+                ),
               ),
             ),
-          ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                SongCover(song: song, size: 42, radius: 13),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: LjodTheme.textStrong,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          if (playing)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 6),
+                              child: EqualizerBars(height: 9, bars: 3),
+                            ),
+                          Flexible(
+                            child: Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: LjodTheme.textSoft,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                PlayPauseButton(
+                  playing: playing,
+                  onTap: onPlayPause,
+                  size: 42,
+                  iconSize: 21,
+                ),
+                const SizedBox(width: 6),
+                ShapeIconButton(
+                  icon: Icons.skip_next_rounded,
+                  onTap: onNext,
+                  tooltip: 'Next',
+                  shape: MaterialShapes.diamond,
+                  size: 18,
+                  padding: 7,
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -242,32 +236,23 @@ class _LjodNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Container(
-        height: 64,
+      // Same surface as the mini player above it, so the two read as one stack.
+      child: LjodBar(
         padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: LjodTheme.panelBlack.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: LjodTheme.borderLight),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            for (var i = 0; i < _items.length; i++)
-              _NavItem(
-                icon: _items[i].$1,
-                label: _items[i].$2,
-                selected: index == i,
-                onTap: () => onTap(i),
-              ),
-          ],
+        child: SizedBox(
+          height: 52,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (var i = 0; i < _items.length; i++)
+                _NavItem(
+                  icon: _items[i].$1,
+                  label: _items[i].$2,
+                  selected: index == i,
+                  onTap: () => onTap(i),
+                ),
+            ],
+          ),
         ),
       ),
     );
