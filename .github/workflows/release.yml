@@ -198,7 +198,19 @@ jobs:
       # The keystore is passed as content, never as a path: nothing has to exist
       # in the repository, and the workflow never writes the key to a tracked
       # location. Gradle decodes it into its disposable build/ directory.
-      - name: Build signed APK
+      # One APK per phone architecture, never a universal one: the universal
+      # build packed three copies of libflutter.so and libapp.so and came to
+      # 70 MiB, of which anything the device could actually run was a third.
+      #
+      # x86_64 is emulator-only and was the largest of the three copies, so it is
+      # simply not built. armv7 stays: it costs one extra upload and covers
+      # 64-bit hardware running a 32-bit userspace.
+      #
+      # --split-debug-info keeps DWARF out of the shipped libapp.so. The symbols
+      # are written to build/symbols and deliberately not published — this runner
+      # has no artifact service, and they are only useful for symbolising a crash
+      # trace from a build whose exact symbols you kept.
+      - name: Build signed APKs
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -206,14 +218,25 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          flutter build apk --release
+          flutter build apk --release \
+            --split-per-abi \
+            --target-platform android-arm64,android-arm \
+            --split-debug-info=build/symbols
 
-      - name: Verify the APK is signed
+      - name: Verify the APKs are signed
         run: |
           set -euo pipefail
           build_tools="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -1)"
-          "${build_tools}/apksigner" verify --verbose \
-            build/app/outputs/flutter-apk/app-release.apk
+          shopt -s nullglob
+          apks=(build/app/outputs/flutter-apk/app-*-release.apk)
+          if [ ${#apks[@]} -eq 0 ]; then
+            echo "No per-ABI APK was produced." >&2
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            echo "Verifying ${apk} ($(du -h "${apk}" | cut -f1))"
+            "${build_tools}/apksigner" verify --verbose "${apk}"
+          done
 
       - name: Remove the decoded keystore
         if: always()
@@ -242,8 +265,19 @@ jobs:
           set -euo pipefail
           api="${SERVER}/api/v1/repos/${REPO}"
           auth="Authorization: token ${TOKEN}"
-          apk="ljod-${TAG#v}.apk"
-          cp build/app/outputs/flutter-apk/app-release.apk "${apk}"
+          version="${TAG#v}"
+          shopt -s nullglob
+          names=()
+          for source in build/app/outputs/flutter-apk/app-*-release.apk; do
+            abi="$(basename "${source}" | sed -E 's/^app-(.*)-release\.apk$/\1/')"
+            name="ljod-${version}-${abi}.apk"
+            cp "${source}" "${name}"
+            names+=("${name}")
+          done
+          if [ ${#names[@]} -eq 0 ]; then
+            echo "No per-ABI APK found to publish." >&2
+            exit 1
+          fi
 
           status="$(curl -sS -o /tmp/release.json -w '%{http_code}' \
             -H "${auth}" "${api}/releases/tags/${TAG}")"
@@ -261,16 +295,25 @@ jobs:
 
           release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' /tmp/release.json)"
 
-          # Re-runs must replace the asset, not fail on a name clash.
-          stale="$(curl -sS -f -H "${auth}" "${api}/releases/${release_id}/assets" \
-            | python3 -c 'import json,sys; n=sys.argv[1]; print(" ".join(str(a["id"]) for a in json.load(sys.stdin) if a["name"]==n))' "${apk}")"
-          for asset_id in ${stale}; do
-            echo "Removing stale asset ${asset_id}."
-            curl -sS -f -X DELETE -H "${auth}" \
-              "${api}/releases/${release_id}/assets/${asset_id}" -o /dev/null
+          # Re-runs must replace the assets, not fail on a name clash. The legacy
+          # single-APK name is cleared as well, so an older 70 MiB universal
+          # build cannot linger beside the smaller per-ABI ones on the same tag.
+          assets="$(mktemp)"
+          trap 'rm -f "${assets}" "${names[@]}"' EXIT
+          curl -sS -f -H "${auth}" "${api}/releases/${release_id}/assets" > "${assets}"
+
+          for name in "${names[@]}" "ljod-${version}.apk"; do
+            stale="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); print(" ".join(str(a["id"]) for a in rows if a["name"]==sys.argv[2]))' "${assets}" "${name}")"
+            for asset_id in ${stale}; do
+              echo "Removing stale asset ${asset_id} (${name})."
+              curl -sS -f -X DELETE -H "${auth}" \
+                "${api}/releases/${release_id}/assets/${asset_id}" -o /dev/null
+            done
           done
 
-          curl -sS -f -X POST -H "${auth}" \
-            -F "attachment=@${apk}" \
-            "${api}/releases/${release_id}/assets?name=${apk}" -o /dev/null
-          echo "Published ${apk} to ${SERVER}/${REPO}/releases/tag/${TAG}"
+          for name in "${names[@]}"; do
+            curl -sS -f -X POST -H "${auth}" \
+              -F "attachment=@${name}" \
+              "${api}/releases/${release_id}/assets?name=${name}" -o /dev/null
+            echo "Published ${name} ($(du -h "${name}" | cut -f1)) to ${SERVER}/${REPO}/releases/tag/${TAG}"
+          done

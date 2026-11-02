@@ -6,6 +6,13 @@ All notable changes to Ljod are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Releases are built per ABI for `arm64-v8a` and `armeabi-v7a` with debug
+  information split out, and no longer include x86_64: a download is a single-
+  architecture file of roughly 20–26 MiB instead of one 70 MiB APK carrying
+  three architectures, two of which the device cannot run.
+
 ## [0.3.2] — 2026-11-02
 
 ### Fixed

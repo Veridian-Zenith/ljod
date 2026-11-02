@@ -102,7 +102,11 @@ git tag v0.3.2 && git push origin v0.3.2
 
 The workflow checks the tag against the pubspec, builds with the four repository
 secrets, verifies the signature with `apksigner`, removes the decoded key, and
-publishes the release. Full procedure, secret names and local signing are in
+publishes the release. It ships one APK per ABI —
+`ljod-<version>-arm64-v8a.apk` and `ljod-<version>-armeabi-v7a.apk`, roughly
+20–26 MiB and 18–24 MiB — with x86_64 left out and debug information stripped;
+install the file matching your phone, which for any modern 64-bit device is
+`arm64-v8a`. Full procedure, secret names and local signing are in
 [docs/RELEASING.md](docs/RELEASING.md).
 
 ## CI

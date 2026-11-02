@@ -50,16 +50,21 @@ and republish a version that already exists — see
    store password opens it, that the alias exists, and that the key password
    unlocks the private key. A failure names the offending secret in seconds
    instead of after a full build.
-3. **Build** — `flutter build apk --release` with the four signing secrets as
-   environment variables.
-4. **Verify** — `apksigner verify --verbose` on the produced APK.
+3. **Build** — `flutter build apk --release --split-per-abi
+   --target-platform android-arm64,android-arm --split-debug-info=build/symbols`
+   with the four signing secrets as environment variables. One APK per ABI,
+   never a universal one — see [Why two APKs](#why-two-apks).
+4. **Verify** — `apksigner verify --verbose` on every per-ABI APK that was
+   produced.
 5. **Clean up** — deletes the decoded keystore (`if: always()`, so it happens
    even on failure).
 6. **Publish release** — creates the Forgejo release for the tag with
-   `ljod-<versionName>.apk` attached, using the REST API and the per-run job
-   token (Forgejo has no `gh release`). Re-running the workflow replaces the
-   asset rather than failing. Nothing is uploaded as a workflow artifact: this
-   runner has no artifact service, so the release asset is the only copy.
+   `ljod-<versionName>-arm64-v8a.apk` and `ljod-<versionName>-armeabi-v7a.apk`
+   attached, using the REST API and the per-run job token (Forgejo has no
+   `gh release`). Re-running the workflow replaces the assets rather than
+   failing, and clears the old single-APK name so a previous universal build
+   cannot sit beside them. Nothing is uploaded as a workflow artifact: this
+   runner has no artifact service, so the release assets are the only copy.
 
 ### Re-running a release without a new tag
 
@@ -153,7 +158,10 @@ ANDROID_KEY_PASSWORD=...
 ```
 
 ```sh
-flutter build apk --release
+flutter build apk --release \
+  --split-per-abi \
+  --target-platform android-arm64,android-arm \
+  --split-debug-info=build/symbols
 ```
 
 To confirm what Gradle resolved without building:
@@ -164,11 +172,37 @@ cd android && ./gradlew :app:signingReport
 
 The release variant should show your keystore path, alias and certificate.
 
+## Why two APKs
+
+A universal `flutter build apk --release` packs every ABI into one file. For
+0.3.2 that was a 70 MiB download made of three near-identical copies:
+
+| component | size |
+| --- | --- |
+| `lib/x86_64` | 24.0 MiB |
+| `lib/arm64-v8a` | 22.5 MiB |
+| `lib/armeabi-v7a` | 20.3 MiB |
+| `classes.dex`, resources, Dart assets | 3.6 MiB |
+
+`--split-per-abi` with `--target-platform android-arm64,android-arm` drops the
+emulator-only x86_64 copy and ships one APK per phone architecture, so a device
+downloads roughly 20–26 MiB (arm64) or 18–24 MiB (armv7) instead of 70. `minSdk` is 35, so no
+32-bit-only hardware runs this; armv7 is kept for 64-bit devices running a 32-bit
+userspace.
+
+`--split-debug-info=build/symbols` moves DWARF out of the shipped `libapp.so`,
+which is where several MiB per ABI were going. The symbol files are written to
+`build/symbols` and are **not** published: this runner has no artifact service,
+so keeping them means downloading them from a workflow log you still have. If a
+release ever needs symbolised crash traces, attach them as release assets — that
+is the only durable place this project has.
+
 ## Verifying a release
 
 ```sh
 # signature and identity
-apksigner verify --print-certs --verbose build/app/outputs/flutter-apk/app-release.apk
+apksigner verify --print-certs --verbose \
+  build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 # compare with the expected upload certificate
 keytool -list -v -keystore /path/to/ljod.p12 -alias ljod | grep SHA256
