@@ -6,6 +6,8 @@ All notable changes to Ljod are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-11-02
+
 ### Added
 
 - CI workflow (`.github/workflows/ci.yml`) that runs formatting, `flutter analyze`,
@@ -68,5 +70,6 @@ All notable changes to Ljod are documented here. The format follows
 
 Initial scaffold: bundle metadata, theme shell and placeholder screens.
 
-[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.3.0...HEAD
+[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.3.1...HEAD
+[0.3.1]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.1
 [0.3.0]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.0

@@ -6,11 +6,11 @@
 abstract final class LjodAppInfo {
   /// Matches the `version:` field in pubspec.yaml. `test/app_info_test.dart`
   /// fails if these disagree.
-  static const String version = '0.3.0+3';
+  static const String version = '0.3.1+4';
 
-  static const String versionName = '0.3.0';
+  static const String versionName = '0.3.1';
 
-  static const int buildNumber = 3;
+  static const int buildNumber = 4;
 
   static const String tag = 'v$versionName';
 
