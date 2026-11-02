@@ -24,6 +24,8 @@ All notable changes to Ljod are documented here. The format follows
   referenced by absolute URL (`https://github.com/subosito/flutter-action@v2`)
   because the instance's action mirror does not carry it, and the release step
   uses the Forgejo REST API because `gh` only speaks github.com.
+- Dependabot configuration removed: Forgejo has no Dependabot, so dependency
+  updates are manual (or a self-hosted Renovate against the same repo).
 
 ### Fixed
 
