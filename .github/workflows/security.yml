@@ -15,9 +15,9 @@ on:
     - cron: '25 15 * * 0'
   workflow_dispatch:
 
-permissions:
-  contents: read
-
+# No permissions block: Forgejo does not support the `permissions` key and
+# warns on every run, expecting capabilities to be granted through
+# Authorized Integrations instead. Declaring it here did nothing.
 env:
   FLUTTER_VERSION: '3.47.9'
 

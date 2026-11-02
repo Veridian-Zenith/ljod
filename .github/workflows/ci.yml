@@ -6,9 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
+# No permissions block: Forgejo does not support the `permissions` key and
+# warns on every run, expecting capabilities to be granted through
+# Authorized Integrations instead. Declaring it here did nothing.
 # One run per branch/PR; a new push cancels the superseded run instead of
 # queueing another five-minute debug build behind it.
 concurrency:

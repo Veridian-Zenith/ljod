@@ -6,11 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# Publishing the release writes to the repository, which the job token carries
-# on Forgejo; the build itself only needs to read the checkout.
-permissions:
-  contents: write
-
+# No permissions block: Forgejo ignores it and warns on every run, granting
+# the job token through Authorized Integrations instead. Publishing a release
+# therefore depends on that integration having repository write access.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
