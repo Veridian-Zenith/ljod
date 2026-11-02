@@ -61,6 +61,25 @@ class MainActivity : AudioServiceFragmentActivity() {
                         }
                     }
 
+                    "extractArtwork" -> {
+                        try {
+                            val dir = call.argument<String>("dir") ?: ""
+                            val tracks =
+                                (call.argument<List<*>>("tracks") ?: emptyList<Any?>())
+                                    .mapNotNull { it as? Map<*, *> }
+                                    .map { mapOf("id" to it["id"], "uri" to it["uri"]) }
+                            val artwork = MusicProvider(applicationContext)
+                                .extractArtwork(dir, tracks)
+                            result.success(artwork)
+                        } catch (error: Exception) {
+                            result.error(
+                                "ARTWORK_FAILED",
+                                error.message ?: "Could not read embedded artwork.",
+                                null
+                            )
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }

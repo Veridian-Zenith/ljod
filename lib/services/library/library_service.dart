@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/folder_scope.dart';
 import '../../core/models/song_model.dart';
 import '../../core/utils/formatters.dart';
@@ -69,6 +70,7 @@ class LibraryService {
 
   static const MethodChannel _channel = MethodChannel('dev.vz.ljod/media');
   static const int _enrichBatchSize = 48;
+  static const int _artworkBatchSize = 24;
 
   bool get isAndroid => !kIsWeb && Platform.isAndroid;
 
@@ -139,6 +141,14 @@ class LibraryService {
       onProgress?.call(enriched.length, raw.length);
     }
 
+    // Tag reading needs a readable file path. Scoped storage can hand back a
+    // `content://` URI instead, and then the cover is lost even though the
+    // picture is right there in the file. Ask the platform for whatever the
+    // isolate could not produce before giving up on it.
+    if (isAndroid) {
+      await _recoverAndroidArtwork(enriched, artworkDirectory);
+    }
+
     final seen = <String>{};
     final songs = <SongModel>[];
     for (final item in enriched) {
@@ -193,6 +203,94 @@ class LibraryService {
     await cache.trim(keepPaths: keepArtwork);
 
     return songs;
+  }
+
+  /// Fills in covers that the in-isolate tag reader could not produce.
+  ///
+  /// `MediaMetadataRetriever` decodes the embedded picture straight from the
+  /// content URI, so a track whose path is not a readable file still gets its
+  /// artwork. Pictures arrive as files in a staging directory and go through
+  /// [ArtworkCache] like every other cover, so hashing, de-duplication and the
+  /// size ceiling stay in one place.
+  Future<void> _recoverAndroidArtwork(
+    List<Map<String, Object?>> enriched,
+    Directory artworkDirectory,
+  ) async {
+    final missing = [
+      for (final item in enriched)
+        if (_clean(item['artworkPath']) == null) item,
+    ];
+    if (missing.isEmpty) return;
+
+    final staging = Directory(
+      p.join(artworkDirectory.parent.path, 'artwork-staging'),
+    );
+    try {
+      if (!await staging.exists()) await staging.create(recursive: true);
+      for (var start = 0; start < missing.length; start += _artworkBatchSize) {
+        final end = min(start + _artworkBatchSize, missing.length);
+        final batch = missing.sublist(start, end);
+        final Map<String, String>? produced;
+        try {
+          produced = await _channel.invokeMapMethod<String, String>(
+            'extractArtwork',
+            {
+              'dir': staging.path,
+              'tracks': [
+                for (final item in batch)
+                  {'id': item['id'], 'uri': item['contentUri'] ?? item['path']},
+              ],
+            },
+          );
+        } on MissingPluginException {
+          // A build without the method: nothing to recover, and the scan goes on.
+          return;
+        } on PlatformException {
+          return;
+        }
+        if (produced == null || produced.isEmpty) continue;
+
+        for (final item in batch) {
+          final staged = produced[item['id']];
+          if (staged == null) continue;
+          final file = File(staged);
+          try {
+            final written = ArtworkCache.storeBytes(
+              artworkDirectory.path,
+              await file.readAsBytes(),
+            );
+            if (written != null) item['artworkPath'] = written;
+          } catch (_) {
+            // Unreadable staged image; leave this track without a cover.
+          } finally {
+            try {
+              if (await file.exists()) await file.delete();
+            } catch (_) {
+              // Staging is disposable.
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Recovery is best-effort: a missing cover must never fail the scan.
+    } finally {
+      try {
+        if (await staging.exists()) await staging.delete(recursive: true);
+      } catch (_) {
+        // Best effort.
+      }
+    }
+
+    final stillMissing = enriched
+        .where((item) => _clean(item['artworkPath']) == null)
+        .length;
+    if (stillMissing > 0) {
+      DiagnosticsLog.instance.log(
+        'artwork: $stillMissing of ${enriched.length} tracks have no cover '
+        '(no embedded picture, or the file could not be read)',
+        level: DiagnosticsLevel.warning,
+      );
+    }
   }
 
   /// Bytes currently used by cached cover art.

@@ -2,8 +2,11 @@ package dev.vz.ljod
 
 import android.content.ContentUris
 import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import java.io.File
 
 /**
  * Reads the device music library through MediaStore.
@@ -67,6 +70,7 @@ class MusicProvider(private val context: Context) {
                     AudioFile(
                         id = id.toString(),
                         path = if (!data.isNullOrBlank()) data else contentUri,
+                        contentUri = contentUri,
                         title = cursor.getString(titleColumn) ?: "",
                         artist = artist,
                         album = cursor.getString(albumColumn) ?: "",
@@ -94,8 +98,57 @@ class MusicProvider(private val context: Context) {
         return files
     }
 
+    /**
+     * Decodes embedded cover art through [MediaMetadataRetriever].
+     *
+     * The Dart tag reader needs a readable file path; this works from the
+     * MediaStore content URI, so a library whose `DATA` column is empty (or
+     * whose files the reader cannot open) still gets its covers. Each picture is
+     * written to [targetDir] and the Dart side moves it into the shared artwork
+     * cache, which owns hashing, de-duplication and the size ceiling.
+     *
+     * Returns ids that produced a picture, mapped to the staged file.
+     */
+    fun extractArtwork(
+        targetDir: String,
+        items: List<Map<String, Any?>>
+    ): Map<String, String> {
+        val output = mutableMapOf<String, String>()
+        val directory = File(targetDir).apply { mkdirs() }
+
+        for (item in items) {
+            val id = item["id"] as? String ?: continue
+            val uri = item["uri"] as? String ?: continue
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, Uri.parse(uri))
+                val picture = retriever.embeddedPicture ?: continue
+                if (picture.isEmpty() || picture.size > MAX_PICTURE_BYTES) continue
+                val file = File(directory, "$id.img")
+                file.writeBytes(picture)
+                output[id] = file.path
+            } catch (_: Exception) {
+                // No embedded picture, or an unreadable track: skip it.
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Exception) {
+                    // Nothing to release.
+                }
+            }
+        }
+
+        return output
+    }
+
+    private companion object {
+        /** Matches the Dart cache ceiling; larger covers are not worth keeping. */
+        const val MAX_PICTURE_BYTES = 2 * 1024 * 1024
+    }
+
     data class AudioFile(
         val id: String,
+        val contentUri: String,
         val path: String,
         val title: String,
         val artist: String,
@@ -107,6 +160,7 @@ class MusicProvider(private val context: Context) {
     ) {
         fun toMap(): Map<String, Any?> = mapOf(
             "id" to id,
+            "contentUri" to contentUri,
             "path" to path,
             "title" to title,
             "artist" to artist,
