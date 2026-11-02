@@ -741,7 +741,11 @@ class LjodSlider extends StatelessWidget {
   final Color activeColor;
 
   /// Rendered height. Material's default slider is 48 tall, which alone made
-  /// the seek bar look like a slab; the track and thumb are scaled to match.
+  /// the seek bar look like a slab.
+  ///
+  /// Track thickness, the gap between track and thumb, and the thumb shape come
+  /// from the theme's expressive slider (a 16px bar with a 24px vertical thumb).
+  /// Overriding them here is what made the seek bar read as a generic capsule.
   final double height;
 
   @override
@@ -756,9 +760,6 @@ class LjodSlider extends StatelessWidget {
           secondaryActiveTrackColor: activeColor.withValues(alpha: 0.45),
           thumbColor: activeColor,
           overlayColor: activeColor.withValues(alpha: 0.14),
-          trackHeight: 5,
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-          overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
         ),
         child: Slider(
           value: value.clamp(0, safeMax),

@@ -14,6 +14,10 @@ import '../../core/models/song_model.dart';
 import '../library/library_providers.dart';
 import '../settings/settings_provider.dart';
 
+// Romanization lives in its own file; re-exported so every existing import of
+// the lyrics service keeps seeing `romanizeLyrics`.
+export 'romanization.dart';
+
 class LyricLine {
   const LyricLine({this.time, required this.text});
 
@@ -91,41 +95,6 @@ class Lyrics {
     }
     return Lyrics(lines: result, synced: synced, source: source);
   }
-}
-
-/// Best-effort romanization for lyrics containing non-Latin characters.
-String romanizeLyrics(String text) {
-  final patterns = {
-    '爱': 'ai',
-    '你': 'ni',
-    '我': 'wo',
-    '心': 'xin',
-    '梦': 'meng',
-    '歌': 'ge',
-    '音': 'yin',
-    '乐': 'yue',
-    '时': 'shi',
-    '光': 'guang',
-    '风': 'feng',
-    '花': 'hua',
-    '月': 'yue',
-    '夜': 'ye',
-    '想': 'xiang',
-    '望': 'wang',
-    '情': 'qing',
-    '青春': 'qing chun',
-    '回忆': 'hui yi',
-  };
-  var result = text;
-  for (final k in patterns.keys) {
-    result = result.replaceAll(k, '[${patterns[k]}]');
-  }
-  result = result.replaceAllMapped(
-    RegExp(r'\[([a-z ]+)\]|[^\x00-\x7F\[\]]+'),
-    (m) => m.group(1) != null ? ' ${m.group(1)!} ' : ' ',
-  );
-  // Collapse the gaps left by removed characters so the sub-line reads evenly.
-  return result.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 /// Why a lyrics request ended the way it did, for the UI to explain.
@@ -288,6 +257,21 @@ class LrclibRemote implements LyricsRemote {
 
   final Dio _dio;
 
+  /// LRCLIB is a community service, and it answers request bursts with 502/503
+  /// rather than a polite 429. Keeping our own calls apart is cheaper than
+  /// retrying through that noise.
+  DateTime? _lastRequest;
+  static const Duration _minSpacing = Duration(milliseconds: 400);
+
+  Future<void> _pace() async {
+    final last = _lastRequest;
+    if (last != null) {
+      final wait = last.add(_minSpacing).difference(DateTime.now());
+      if (wait > Duration.zero) await Future<void>.delayed(wait);
+    }
+    _lastRequest = DateTime.now();
+  }
+
   @override
   Future<RemoteLyricsResult> lookup(LyricsQuery query) async {
     if (!query.isCallable) {
@@ -297,38 +281,58 @@ class LrclibRemote implements LyricsRemote {
       );
     }
 
-    try {
-      final response = await _dio.get<Object>(
-        '/api/get',
-        queryParameters: query.getParams,
-      );
-      final hit = _hitFrom(response.data);
-      if (hit != null) return hit;
-      return const RemoteLyricsMiss();
-    } on DioException catch (error) {
-      final status = error.response?.statusCode;
-      if (status == 404) return _search(query);
-      if (status == 429 || status == 503) {
-        return RemoteLyricsFailure(
-          'LRCLIB is rate limiting requests right now.',
-          retryAfter: _retryAfter(error.response),
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _pace();
+        final response = await _dio.get<Object>(
+          '/api/get',
+          queryParameters: query.getParams,
         );
-      }
-      if (status == 400) {
+        final hit = _hitFrom(response.data);
+        return hit ?? const RemoteLyricsMiss();
+      } on DioException catch (error) {
+        final status = error.response?.statusCode;
+        if (status == 404) return _search(query);
+        if (status == 429) {
+          return RemoteLyricsFailure(
+            'LRCLIB is rate limiting requests right now.',
+            retryAfter: _retryAfter(error.response),
+          );
+        }
+        // A 5xx means LRCLIB is busy, not that we are asking too often. One
+        // short retry covers it, and it must never park a cooldown: that is
+        // what left the sheet saying "rate limited" indefinitely.
+        if ((status == 502 || status == 503 || status == 504) &&
+            attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+          continue;
+        }
+        if (status == 400) {
+          return const RemoteLyricsFailure(
+            'LRCLIB rejected this track\'s metadata. Check the title, artist '
+            'and duration tags.',
+          );
+        }
+        if (status != null && status >= 500) {
+          return const RemoteLyricsFailure(
+            'LRCLIB is busy right now. Try again in a moment.',
+          );
+        }
         return const RemoteLyricsFailure(
-          'LRCLIB rejected this track\'s metadata. Check the title, artist '
-          'and duration tags.',
+          'Could not reach LRCLIB. Check the connection and try again.',
         );
       }
-      return const RemoteLyricsFailure(
-        'Could not reach LRCLIB. Check the connection and try again.',
-      );
     }
+
+    return const RemoteLyricsFailure(
+      'LRCLIB is busy right now. Try again in a moment.',
+    );
   }
 
   /// One bounded fallback: search by title/artist and accept a close match.
   Future<RemoteLyricsResult> _search(LyricsQuery query) async {
     try {
+      await _pace();
       final response = await _dio.get<Object>(
         '/api/search',
         queryParameters: query.searchParams,
@@ -452,6 +456,10 @@ class LyricsService {
 
   final LinkedHashMap<String, LyricsResult> _memory = LinkedHashMap();
   final Map<String, Future<LyricsResult>> _inFlight = {};
+
+  /// Highest refresh token already served per track, so a manual refresh forces
+  /// exactly one lookup instead of every later rebuild of the provider.
+  final Map<String, int> _forceTokens = {};
   DateTime? _cooldownUntil;
   int _writesSinceTrim = 0;
   Directory? _cacheDirectory;
@@ -460,11 +468,20 @@ class LyricsService {
     SongModel song, {
     required bool allowOnline,
     bool force = false,
+    int forceToken = 0,
   }) async {
     final query = LyricsQuery.fromSong(song);
     final fingerprint = query.fingerprint;
 
-    if (!force) {
+    // A refresh token forces one lookup. Treating any non-zero token as "force"
+    // meant every rebuild of the provider skipped the cache and asked LRCLIB
+    // again: the lines being followed were swapped mid-track, and the bursts
+    // came back as 502/503.
+    final tokenForced = forceToken > (_forceTokens[fingerprint] ?? 0);
+    if (tokenForced) _forceTokens[fingerprint] = forceToken;
+    final forced = force || tokenForced;
+
+    if (!forced) {
       final remembered = _memory.remove(fingerprint);
       if (remembered != null) {
         // Refresh insertion order for the tiny LRU.
@@ -480,7 +497,7 @@ class LyricsService {
 
     if (!allowOnline) return const LyricsResult(status: LyricsStatus.disabled);
 
-    if (!force) {
+    if (!forced) {
       final stored = await _readCache(fingerprint);
       if (stored != null) return _remember(fingerprint, stored);
     }
@@ -488,7 +505,7 @@ class LyricsService {
     final existing = _inFlight[fingerprint];
     if (existing != null) return existing;
 
-    final future = _fetch(query, fingerprint, force: force);
+    final future = _fetch(query, fingerprint, force: forced);
     _inFlight[fingerprint] = future;
     try {
       return await future;
@@ -850,5 +867,5 @@ final lyricsProvider = FutureProvider.family<LyricsResult, String>((
 
   return ref
       .read(lyricsServiceProvider)
-      .load(song, allowOnline: allowOnline, force: refreshToken > 0);
+      .load(song, allowOnline: allowOnline, forceToken: refreshToken);
 });

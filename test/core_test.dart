@@ -139,15 +139,17 @@ void main() {
   });
 
   group('romanization', () {
-    test('maps common Chinese characters and leaves Latin text alone', () {
+    test('Chinese goes through pinyin and Latin is left alone', () {
       final romanized = romanizeLyrics('爱你');
       expect(romanized, contains('ai'));
       expect(romanized, contains('ni'));
       expect(romanizeLyrics('hello world'), 'hello world');
     });
 
-    test('unmapped scripts collapse so the lyrics sheet can fall back', () {
-      expect(romanizeLyrics('ありがとう').trim(), isEmpty);
+    test('a line with kana is Japanese, so it never goes through pinyin', () {
+      expect(detectScript('君の名は'), LyricScript.japanese);
+      expect(detectScript('你的名字'), LyricScript.chinese);
+      expect(romanizeLyrics('ありがとう'), 'arigatou');
     });
   });
 

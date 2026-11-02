@@ -37,6 +37,8 @@ dependencies:
 
   # Media session / notification integration
   audio_session: ^0.2.4
+  pinyin: ^3.3.0
+  kana_kit: ^2.1.1
 
 dev_dependencies:
   flutter_test:

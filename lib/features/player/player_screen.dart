@@ -270,28 +270,6 @@ class _ArtStage extends StatelessWidget {
               radius: LjodTheme.radiusXl,
             ),
           ),
-          Positioned(
-            right: 26,
-            top: 18,
-            child: AnimatedOpacity(
-              opacity: playing ? 1 : 0,
-              duration: const Duration(milliseconds: 260),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: LjodTheme.bgPitch.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: LjodTheme.amber.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: const EqualizerBars(height: 12, bars: 4),
-              ),
-            ),
-          ),
         ],
       ),
     );

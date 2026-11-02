@@ -83,9 +83,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
     return AppSettings(
       expressiveMotion: prefs.getBool(_motion) ?? true,
-      // Off by default: a local-first player should not reach the network
-      // until the listener opts in.
-      lyricsLookup: prefs.getBool(_lyrics) ?? false,
+      // On by default: the lyrics sheet is how most listeners read lyrics, and
+      // an opt-in toggle made it look broken. Lookups stay one per track and
+      // are cached, and the Settings toggle still takes the network away.
+      lyricsLookup: prefs.getBool(_lyrics) ?? true,
       sortFavoritesFirst: prefs.getBool(_favoriteFirst) ?? false,
       folderFilterMode: mode,
       folderFilters: prefs.getStringList(_folderFilters) ?? const [],

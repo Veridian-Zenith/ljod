@@ -15,9 +15,11 @@ import '../../services/settings/settings_provider.dart';
 /// lookup. Nothing here polls: the only network call is the one the lookup
 /// provider already made, or the explicit "look up / refresh" action.
 class LyricsSheet extends ConsumerStatefulWidget {
-  const LyricsSheet({super.key, required this.song});
+  const LyricsSheet({super.key, this.song});
 
-  final SongModel song;
+  /// The track that was playing when the sheet opened. The sheet follows the
+  /// now-playing track, so this is only the fallback when nothing is playing.
+  final SongModel? song;
 
   @override
   ConsumerState<LyricsSheet> createState() => _LyricsSheetState();
@@ -31,6 +33,8 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   bool? _showRomanization;
   bool _followPlayback = true;
   int _lastActive = -1;
+  String? _songId;
+  ScrollController? _scrollController;
 
   String _romanizedLine(String text) {
     final romanized = romanizeLyrics(text).trim();
@@ -44,22 +48,83 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   bool _canRomanize(Lyrics lyrics) =>
       lyrics.lines.any((line) => _romanizedLine(line.text).isNotEmpty);
 
-  void _refresh({bool force = true}) {
-    ref.read(lyricsRefreshProvider.notifier).request(widget.song.id);
-    if (force) {
-      ref.invalidate(lyricsProvider(widget.song.id));
-    }
+  void _refresh(String songId) {
+    ref.read(lyricsRefreshProvider.notifier).request(songId);
+    ref.invalidate(lyricsProvider(songId));
   }
 
-  Future<void> _enableLookupAndRetry() async {
+  Future<void> _enableLookupAndRetry(String songId) async {
     await ref.read(settingsProvider.notifier).setLyricsLookup(true);
     if (!mounted) return;
-    _refresh();
+    _refresh(songId);
+  }
+
+  /// Keeps the active line at the follow position.
+  ///
+  /// `ensureVisible` only works for lines the lazy list has already built, so an
+  /// off-screen line has no context to scroll to — which is why following
+  /// simply stopped once a track ran past the first screenful. When that
+  /// happens, move the viewport to the line's share of the scroll extent and
+  /// centre it on the next frame, once it exists.
+  void _followLine(int index, int lineCount) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final lineContext = _lineKeys[index]?.currentContext;
+      if (lineContext != null) {
+        Scrollable.ensureVisible(
+          lineContext,
+          alignment: 0.34,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+        return;
+      }
+      final controller = _scrollController;
+      if (controller == null || !controller.hasClients || lineCount <= 1) {
+        return;
+      }
+      final position = controller.position;
+      final share = index / (lineCount - 1);
+      final target = (position.maxScrollExtent * share).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      controller
+          .animateTo(
+            target,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+          )
+          .then((_) {
+            if (!mounted) return;
+            final built = _lineKeys[index]?.currentContext;
+            if (built == null || !built.mounted) return;
+            Scrollable.ensureVisible(
+              built,
+              alignment: 0.34,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+            );
+          });
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final song = widget.song;
+    // Follow the track that is actually playing: the sheet is opened once and
+    // outlives the song it was opened for.
+    final song = ref.watch(nowPlayingProvider) ?? widget.song;
+    if (song == null) {
+      return const LoadingView(label: 'Nothing playing');
+    }
+    if (song.id != _songId) {
+      _songId = song.id;
+      _lineKeys.clear();
+      _lastActive = -1;
+      _followPlayback = true;
+      _showRomanization = null;
+      _scrollController = null;
+    }
     final lyricsAsync = ref.watch(lyricsProvider(song.id));
     final position = ref.watch(positionProvider).value ?? Duration.zero;
     final result = lyricsAsync.value;
@@ -71,17 +136,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
     if (lyrics != null && active != _lastActive) {
       _lastActive = active;
       if (_followPlayback && active >= 0) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final context = _lineKeys[active]?.currentContext;
-          if (context != null) {
-            Scrollable.ensureVisible(
-              context,
-              alignment: 0.34,
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic,
-            );
-          }
-        });
+        _followLine(active, lyrics.lines.length);
       }
     }
 
@@ -91,6 +146,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
       minChildSize: 0.4,
       maxChildSize: 0.96,
       builder: (context, scrollController) {
+        _scrollController = scrollController;
         return Column(
           children: [
             _Header(
@@ -101,7 +157,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
               romanizeEnabled: showRomanization,
               onToggleRomanize: () =>
                   setState(() => _showRomanization = !showRomanization),
-              onRefresh: _refresh,
+              onRefresh: () => _refresh(song.id),
               onFollow: () {
                 setState(() => _followPlayback = !_followPlayback);
                 if (_followPlayback) _lastActive = -1;
@@ -117,12 +173,13 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
                   title: 'Could not read lyrics',
                   message: '$error',
                   actionLabel: 'Try again',
-                  onAction: _refresh,
+                  onAction: () => _refresh(song.id),
                 ),
                 data: (value) {
                   if (lyrics == null) {
                     return _emptyState(
                       value,
+                      songId: song.id,
                       settingsOn: ref.watch(
                         settingsProvider.select((s) => s.lyricsLookup),
                       ),
@@ -172,7 +229,11 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
     );
   }
 
-  Widget _emptyState(LyricsResult? result, {required bool settingsOn}) {
+  Widget _emptyState(
+    LyricsResult? result, {
+    required String songId,
+    required bool settingsOn,
+  }) {
     switch (result?.status) {
       case LyricsStatus.instrumental:
         return const _StateMessage(
@@ -188,7 +249,9 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
               'LRCLIB has no match, and there is no sidecar or embedded '
               'lyrics. A matching .lrc file beside the track works offline.',
           actionLabel: 'Search LRCLIB again',
-          onAction: settingsOn ? _refresh : _enableLookupAndRetry,
+          onAction: settingsOn
+              ? () => _refresh(songId)
+              : () => _enableLookupAndRetry(songId),
         );
       case LyricsStatus.disabled:
         return _StateMessage(
@@ -199,7 +262,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
               'once for this track — the title, artist, album and duration go '
               'out, nothing else.',
           actionLabel: 'Look up lyrics',
-          onAction: _enableLookupAndRetry,
+          onAction: () => _enableLookupAndRetry(songId),
         );
       case LyricsStatus.failed:
         final wait = result?.retryAfter;
@@ -211,7 +274,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
             if (wait != null) 'Retry in ${wait.inSeconds}s.',
           ].join(' '),
           actionLabel: wait == null ? 'Try again' : null,
-          onAction: wait == null ? _refresh : null,
+          onAction: wait == null ? () => _refresh(songId) : null,
         );
       case LyricsStatus.found:
       case null:
@@ -223,7 +286,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
               : 'Enable online lookup to fetch lyrics once, or drop a .lrc '
                     'file beside the track.',
           actionLabel: 'Look up lyrics',
-          onAction: _refresh,
+          onAction: () => _refresh(songId),
         );
     }
   }

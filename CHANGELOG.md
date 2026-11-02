@@ -13,6 +13,26 @@ All notable changes to Ljod are documented here. The format follows
   left every affected screen unrendered with `RenderBox was not laid out` behind
   it: the scale is now sanitised once at the top of the app and falls back to no
   scaling.
+- Lyrics follow the track they belong to: the sheet updates when the next song
+  starts instead of holding the one it was opened with, and the active line is
+  kept in view for lines the list has not built yet.
+- A manual lyrics refresh forces a single lookup instead of every later rebuild,
+  which had been re-fetching and re-flowing the lines mid-playback.
+- LRCLIB `502`/`503` answers are retried once and no longer look like a
+  permanent rate limit, and requests are paced so bursts stop causing them.
+- Romanization works per script — Chinese through pinyin, Japanese kana through
+  Hepburn, Korean, Russian, Thai and Vietnamese — and a line containing kana is
+  treated as Japanese rather than run through pinyin.
+- Embedded artwork is read through the platform bridge when MediaStore only
+  exposes a content URI, so tracks whose files cannot be opened directly still
+  get covers.
+
+### Changed
+
+- The seek bar follows the theme's expressive slider instead of overriding it
+  with a capsule thumb and a 5px track.
+- The equaliser capsule over the album art in the full player is gone.
+- Online lyrics lookup is on by default; the Settings toggle still turns it off.
 
 ## [0.3.1] — 2026-11-02
 
