@@ -38,6 +38,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # The runner's tool cache is unpacked under /opt/hostedtoolcache by
+      # another user, so git exits 128 with "dubious ownership" — fatal both to
+      # the setup action and to the Flutter tool's own git calls. The path is
+      # not known ahead of time, so the wildcard entry is the reliable form.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
+
       - name: Set up Flutter
         uses: https://github.com/subosito/flutter-action@v2
         with:
@@ -60,6 +67,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      # The runner's tool cache is unpacked under /opt/hostedtoolcache by
+      # another user, so git exits 128 with "dubious ownership" — fatal both to
+      # the setup action and to the Flutter tool's own git calls. The path is
+      # not known ahead of time, so the wildcard entry is the reliable form.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
 
       - name: Set up Flutter
         uses: https://github.com/subosito/flutter-action@v2
@@ -88,6 +102,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+
+      # The runner's tool cache is unpacked under /opt/hostedtoolcache by
+      # another user, so git exits 128 with "dubious ownership" — fatal both to
+      # the setup action and to the Flutter tool's own git calls. The path is
+      # not known ahead of time, so the wildcard entry is the reliable form.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
 
       - name: Set up Flutter
         uses: https://github.com/subosito/flutter-action@v2

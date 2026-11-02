@@ -30,6 +30,12 @@ jobs:
 
       # Absolute URL: Forgejo's action mirror (data.forgejo.org) does not carry
       # subosito/flutter-action, so a bare reference fails to resolve.
+      #
+      # It unpacks into /opt/hostedtoolcache owned by another user, so git
+      # exits 128 with "dubious ownership" unless the directory is trusted.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
+
       - name: Set up Flutter
         uses: https://github.com/subosito/flutter-action@v2
         with:
