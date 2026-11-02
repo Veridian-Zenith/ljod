@@ -133,9 +133,56 @@ class _LjodAppState extends ConsumerState<LjodApp> {
       theme: theme,
       darkTheme: theme,
       themeMode: ThemeMode.dark,
+      // A system font scale the text engine cannot use would otherwise fail
+      // every paragraph layout; see [LjodMediaQuery].
+      builder: (context, child) => LjodMediaQuery(child: child!),
       home: _showSetup
           ? SetupScreen(onFinished: _finishSetup)
           : const LjodShell(),
     );
   }
+}
+
+/// Guarantees a text scale the engine can actually use.
+///
+/// A corrupt system font scale — Android reports NaN when `FONT_SCALE` is unset
+/// or malformed — reaches `dart:ui` unchanged, where `scaleFontSize` throws
+/// `Unsupported operation: Infinity or NaN toInt` for every paragraph painted.
+/// Text then never lays out, and the failure cascades into `RenderBox was not
+/// laid out` for whatever contains it, which is a blank, unusable screen. The
+/// value is not recoverable below the framework, so it is sanitised once here,
+/// at the top of the app.
+class LjodMediaQuery extends StatelessWidget {
+  const LjodMediaQuery({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final media =
+        MediaQuery.maybeOf(context) ??
+        MediaQueryData.fromView(View.of(context));
+    return MediaQuery(
+      data: media.copyWith(textScaler: _usableTextScaler(media.textScaler)),
+      child: child,
+    );
+  }
+}
+
+/// Returns [scaler] unchanged when it produces sane sizes, and no scaling when
+/// it does not (NaN, infinity, or a zero/negative factor that would render text
+/// invisible).
+///
+/// Probing a representative size is deliberate: `SystemTextScaler.scale` is the
+/// exact call that throws for a bad factor, and it avoids reading the deprecated
+/// `MediaQueryData.textScaleFactor` double. The probe runs once per app rebuild,
+/// not per painted string.
+TextScaler _usableTextScaler(TextScaler scaler) {
+  try {
+    final scaled = scaler.scale(16);
+    if (scaled.isFinite && scaled > 0) return scaler;
+  } catch (_) {
+    // Exactly the failure this guard exists for.
+  }
+  return TextScaler.noScaling;
 }

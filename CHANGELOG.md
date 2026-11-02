@@ -6,6 +6,14 @@ All notable changes to Ljod are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Text no longer fails to lay out when the system reports an unusable font scale
+  (`Unsupported operation: Infinity or NaN toInt` out of `scaleFontSize`), which
+  left every affected screen unrendered with `RenderBox was not laid out` behind
+  it: the scale is now sanitised once at the top of the app and falls back to no
+  scaling.
+
 ## [0.3.1] — 2026-11-02
 
 ### Added
