@@ -4,7 +4,15 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual trigger so a release can be built and published again without moving
+  # a tag or inventing a version: the dispatch builds the selected ref and
+  # replaces the asset on that version's release.
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. 0.3.1 (empty uses pubspec.yaml)'
+        required: false
+        default: ''
 
 # No permissions block: Forgejo ignores it and warns on every run, granting
 # the job token through Authorized Integrations instead. Publishing a release
@@ -19,6 +27,40 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      # One place decides which release this run publishes. A tag push is named
+      # by its tag; a manual run takes the `version` input, or pubspec's version
+      # when that input is empty. Both paths read the version from the checkout,
+      # so the APK and the release cannot disagree about it.
+      - name: Resolve the release version
+        id: release
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          declared="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '[:space:]')"
+          name="${declared%%+*}"
+          tag="v${name}"
+
+          if [ -n "${INPUT_VERSION}" ]; then
+            case "${INPUT_VERSION}" in
+              v*) tag="${INPUT_VERSION}" ;;
+              *)  tag="v${INPUT_VERSION}" ;;
+            esac
+          fi
+
+          # A tag push is named by its tag, so the two must already agree;
+          # otherwise the APK would claim one version and the release another.
+          # A manual run is not held to this: republishing an existing tag from
+          # a later commit is the whole point of the input.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "${tag}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${declared} (expected ${tag})." >&2
+            echo "Bump the version, or run this workflow manually to publish ${tag}." >&2
+            exit 1
+          fi
+
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${tag} from ${GITHUB_REF_NAME} (${GITHUB_REF_TYPE})."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -108,18 +150,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Check the tag matches pubspec
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          set -euo pipefail
-          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '[:space:]')"
-          name="${version%%+*}"
-          if [ "v${name}" != "${GITHUB_REF_NAME}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${version} (expected v${name})." >&2
-            exit 1
-          fi
-          echo "Building ${name} from tag ${GITHUB_REF_NAME}."
-
       # `flutter pub get` resolves plugin platform implementations and exits 1 with
       # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
       # when none is installed, so even the analysis-only jobs need an SDK; the APK
@@ -193,25 +223,26 @@ jobs:
       # service is absent, so the step fails the job after a successful build.
       # The release asset below is the durable, user-facing copy anyway.
 
-      # The artifact above is only reachable from the Actions tab and expires;
-      # this publishes the signed APK where users can download it.
+      # This publishes the signed APK where users can download it, and is the
+      # only copy: the runner has no artifact service.
       #
       # GitHub's `gh release` speaks github.com only, so this talks to the
-      # Forgejo REST API directly with the per-run job token. Re-running
-      # replaces the attached APK instead of failing on a name clash.
+      # Forgejo REST API directly with the per-run job token. Running it again —
+      # by tag push or manually — replaces the attached APK instead of failing
+      # on a name clash.
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.release.outputs.tag != ''
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SERVER: ${{ github.server_url }}
           REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TARGET: ${{ github.sha }}
         run: |
           set -euo pipefail
           api="${SERVER}/api/v1/repos/${REPO}"
           auth="Authorization: token ${TOKEN}"
-          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '[:space:]')"
-          apk="ljod-${version%%+*}.apk"
+          apk="ljod-${TAG#v}.apk"
           cp build/app/outputs/flutter-apk/app-release.apk "${apk}"
 
           status="$(curl -sS -o /tmp/release.json -w '%{http_code}' \
@@ -220,7 +251,7 @@ jobs:
             echo "No release for ${TAG} yet; creating one."
             curl -sS -f -X POST "${api}/releases" \
               -H "${auth}" -H 'Content-Type: application/json' \
-              -d "{\"tag_name\":\"${TAG}\",\"name\":\"Ljod ${TAG}\"}" \
+              -d "{\"tag_name\":\"${TAG}\",\"target_commitish\":\"${TARGET}\",\"name\":\"Ljod ${TAG}\"}" \
               > /tmp/release.json
           elif [ "${status}" != "200" ]; then
             echo "Could not look up the release for ${TAG} (HTTP ${status}):" >&2

@@ -35,11 +35,17 @@ git tag v0.3.1
 git push origin v0.3.1
 ```
 
+A tag push is not the only way: the workflow can also be run by hand to rebuild
+and republish a version that already exists — see
+[Re-running a release](#re-running-a-release-without-a-new-tag).
+
 ## 3. What the workflow does
 
 `.github/workflows/release.yml`, triggered by `v*` tags (and manual dispatch):
 
-1. **Tag guard** — compares the tag with `pubspec.yaml` and stops on a mismatch.
+1. **Resolve the version** — a tag push must equal `v<pubspec name>` or the run
+   stops; a manual run publishes the `version` input, or pubspec's version when
+   that is left empty.
 2. **Signing check** — decodes the keystore, then uses `keytool` to prove the
    store password opens it, that the alias exists, and that the key password
    unlocks the private key. A failure names the offending secret in seconds
@@ -54,6 +60,23 @@ git push origin v0.3.1
    token (Forgejo has no `gh release`). Re-running the workflow replaces the
    asset rather than failing. Nothing is uploaded as a workflow artifact: this
    runner has no artifact service, so the release asset is the only copy.
+
+### Re-running a release without a new tag
+
+Because the workflow also has a manual trigger, a version can be rebuilt and
+republished without moving a tag or bumping the version:
+
+**Actions → Release Build → Run workflow**, on the branch you want to build from.
+
+Leave `version` empty to publish whatever `pubspec.yaml` declares, or type a
+version (`0.3.1` and `v0.3.1` both work) to publish that release instead. The APK
+is built from the selected ref; the asset on that tag's release is replaced, and
+the release is created — with the tag pointing at the built commit — if it does
+not exist yet.
+
+Only users who can run workflows see that button, and publishing still needs the
+job token to have write access through Authorized Integrations, exactly as a tag
+push does.
 
 ## Signing contract
 
