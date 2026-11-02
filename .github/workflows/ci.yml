@@ -253,9 +253,16 @@ jobs:
         run: flutter pub get
 
       # Debug signing uses the generated debug keystore, so no repository
-      # secret is involved and fork PRs work unchanged.
-      - name: Build debug APK
-        run: flutter build apk --debug
+      # secret is involved and fork PRs work unchanged. The ABIs match the
+      # release build: x86_64 exists only for emulators and would otherwise
+      # account for a third of a download no phone can use. Debug output is
+      # left unstripped on purpose — symbols are the point of a debug build.
+      - name: Build debug APKs
+        run: |
+          set -euo pipefail
+          flutter build apk --debug \
+            --split-per-abi \
+            --target-platform android-arm64,android-arm
 
       # There is no artifact service on this host: the runner identifies as
       # GHES, so upload-artifact fails with "@actions/artifact v2.0.0+ ...
@@ -275,11 +282,28 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
           api="${SERVER}/api/v1/repos/${REPO}"
           auth="Authorization: token ${TOKEN}"
           tag="debug"
-          apk="ljod-debug.apk"
-          cp build/app/outputs/flutter-apk/app-debug.apk "${apk}"
+
+          sources=(build/app/outputs/flutter-apk/app-*-debug.apk)
+          if [ ${#sources[@]} -eq 0 ]; then
+            echo 'The build produced no per-ABI debug APK.' >&2
+            ls -la build/app/outputs/flutter-apk >&2 || true
+            exit 1
+          fi
+
+          names=()
+          for source in "${sources[@]}"; do
+            abi="${source#*app-}"
+            abi="${abi%-debug.apk}"
+            name="ljod-debug-${abi}.apk"
+            cp "${source}" "${name}"
+            names+=("${name}")
+            echo "Prepared ${name} ($(du -h "${name}" | cut -f1))."
+          done
+          trap 'rm -f "${names[@]}"' EXIT
 
           status="$(curl -sS -o /tmp/debug-release.json -w '%{http_code}' \
             -H "${auth}" "${api}/releases/tags/${tag}")"
@@ -287,7 +311,7 @@ jobs:
             echo "No ${tag} release yet; creating it."
             curl -sS -f -X POST "${api}/releases" \
               -H "${auth}" -H 'Content-Type: application/json' \
-              -d "{\"tag_name\":\"${tag}\",\"target_commitish\":\"${SHA}\",\"name\":\"Debug build\",\"body\":\"Rolling debug APK from main. Replaced on every push; unsigned for release use.\",\"prerelease\":true,\"draft\":false}" \
+              -d "{\"tag_name\":\"${tag}\",\"target_commitish\":\"${SHA}\",\"name\":\"Debug build\",\"body\":\"Rolling debug APKs from main, one per ABI. Replaced on every push; unsigned for release use.\",\"prerelease\":true,\"draft\":false}" \
               > /tmp/debug-release.json
           elif [ "${status}" != "200" ]; then
             echo "Could not look up the ${tag} release (HTTP ${status}):" >&2
@@ -297,15 +321,19 @@ jobs:
 
           release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' /tmp/debug-release.json)"
 
-          # Re-runs must replace the asset, not fail on a name clash.
+          # Re-runs must replace the assets, not fail on a name clash, and the
+          # legacy single-APK asset must not linger beside them.
           stale="$(curl -sS -f -H "${auth}" "${api}/releases/${release_id}/assets" \
-            | python3 -c 'import json,sys; n=sys.argv[1]; print(" ".join(str(a["id"]) for a in json.load(sys.stdin) if a["name"]==n))' "${apk}")"
+            | python3 -c 'import json,sys; keep=set(sys.argv[1:]); print(" ".join(str(a["id"]) for a in json.load(sys.stdin) if a["name"] in keep or a["name"]=="ljod-debug.apk"))' "${names[@]}")"
           for asset_id in ${stale}; do
             echo "Removing stale asset ${asset_id}."
             curl -sS -f -X DELETE -H "${auth}" \
               "${api}/releases/${release_id}/assets/${asset_id}" -o /dev/null
           done
 
-          curl -sS -f -X POST "${api}/releases/${release_id}/assets?name=${apk}" \
-            -H "${auth}" -F "attachment=@${apk}" -o /dev/null
-          echo "Uploaded ${apk} to ${SERVER}/${REPO}/releases/tag/${tag}"
+          for name in "${names[@]}"; do
+            curl -sS -f -X POST "${api}/releases/${release_id}/assets?name=${name}" \
+              -H "${auth}" -F "attachment=@${name}" -o /dev/null
+            echo "Uploaded ${name}."
+          done
+          echo "Published ${#names[@]} debug APKs to ${SERVER}/${REPO}/releases/tag/${tag}"
