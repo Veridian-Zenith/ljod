@@ -95,7 +95,7 @@ Credentials (`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
 `ANDROID_KEY_PASSWORD`) come from the environment first, then from the
 git-ignored `local.properties`.
 
-The base64 value is decoded into `android/.gradle-signing/ljod-upload.p12`
+The base64 value is decoded into `android/.gradle-signing/ljod.p12`
 (mode 0600, git-ignored). It deliberately sits outside `build/` so a
 `gradle clean` cannot delete it between configuration and signing.
 
@@ -114,7 +114,7 @@ secret is the base64 **content**, so it is the one worth generating locally and
 copying straight to the clipboard:
 
 ```sh
-base64 -w0 /path/outside/repo/ljod-upload.p12 | xclip -selection clipboard
+base64 -w0 /path/outside/repo/ljod.p12 | xclip -selection clipboard
 ```
 
 The API equivalent is
@@ -133,8 +133,8 @@ The `Verify the signing secrets` step catches this before the build starts. On a
 tag that predates that step, check by hand:
 
 ```sh
-keytool -list -keystore ljod-upload.p12 -storepass "$ANDROID_KEYSTORE_PASSWORD"
-keytool -certreq -keystore ljod-upload.p12 -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+keytool -list -keystore ljod.p12 -storepass "$ANDROID_KEYSTORE_PASSWORD"
+keytool -certreq -keystore ljod.p12 -storepass "$ANDROID_KEYSTORE_PASSWORD" \
   -alias ljod -keypass "$ANDROID_KEY_PASSWORD" -file /tmp/check.csr
 ```
 
@@ -146,7 +146,7 @@ the key password is right.
 Keep the key outside the checkout and point the root `local.properties` at it:
 
 ```properties
-ANDROID_KEYSTORE_PATH=/home/you/.config/ljod/ljod-upload.p12
+ANDROID_KEYSTORE_PATH=/home/you/.config/ljod/ljod.p12
 ANDROID_KEYSTORE_PASSWORD=...
 ANDROID_KEY_ALIAS=...
 ANDROID_KEY_PASSWORD=...
@@ -171,7 +171,7 @@ The release variant should show your keystore path, alias and certificate.
 apksigner verify --print-certs --verbose build/app/outputs/flutter-apk/app-release.apk
 
 # compare with the expected upload certificate
-keytool -list -v -keystore /path/to/ljod-upload.p12 -alias ljod | grep SHA256
+keytool -list -v -keystore /path/to/ljod.p12 -alias ljod | grep SHA256
 ```
 
 The APK's `V2 Signer: certificate SHA-256 digest` must match the keystore's

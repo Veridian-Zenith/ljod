@@ -54,7 +54,7 @@ local.properties
 
 # Signing material must never be committed
 /android/app/keystore/
-*.p12
+**.p12
 *.jks
 *.keystore
 # Decoded keystore location used by android/app/build.gradle.kts

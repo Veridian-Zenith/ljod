@@ -64,7 +64,7 @@ android {
                 // between configuration and signing. Ignored by git.
                 val output = File(
                     rootProject.projectDir,
-                    ".gradle-signing/ljod-upload.p12",
+                    ".gradle-signing/ljod.p12",
                 )
                 output.parentFile?.mkdirs()
                 output.writeBytes(Base64.getDecoder().decode(cleaned))
