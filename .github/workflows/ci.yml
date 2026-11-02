@@ -52,6 +52,44 @@ jobs:
           channel: stable
           cache: true
 
+      # `flutter pub get` resolves plugin platform implementations and exits 1 with
+      # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
+      # when none is installed, so even the analysis-only jobs need an SDK; the APK
+      # jobs need one to build regardless. This image ships none, so install it at the
+      # level compileSdk asks for (37).
+      - name: Set up Android SDK
+        run: |
+          set -euo pipefail
+          sdk="${RUNNER_TEMP:-${HOME:-/tmp}}/android-sdk"
+          manager="${sdk}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "${manager}" ]; then
+            echo "Installing Android command-line tools into ${sdk}."
+            tmp="$(dirname "${sdk}")/tmp-tools"
+            mkdir -p "${sdk}/cmdline-tools" "${tmp}/unpacked"
+            curl -fsSL -o "${tmp}/cmdline-tools.zip" \
+              "https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip"
+            if command -v unzip > /dev/null; then
+              unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}/unpacked"
+            else
+              python3 -m zipfile -e "${tmp}/cmdline-tools.zip" "${tmp}/unpacked"
+            fi
+            rm -rf "${sdk}/cmdline-tools/latest"
+            mv "${tmp}/unpacked/cmdline-tools" "${sdk}/cmdline-tools/latest"
+            rm -rf "${tmp}"
+          fi
+
+          # The licence prompts read stdin; `yes` answers them. It dies of SIGPIPE
+          # once sdkmanager stops reading, which is expected and not a failure.
+          yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
+
+          "${manager}" --sdk_root="${sdk}" --install \
+            "platform-tools" "platforms;android-canary-20261007" "build-tools;37.0.0"
+
+          echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
+          echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
+          echo "Android SDK ready at ${sdk}"
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -68,6 +106,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
       # The runner's tool cache is unpacked under /opt/hostedtoolcache by
       # another user, so git exits 128 with "dubious ownership" — fatal both to
       # the setup action and to the Flutter tool's own git calls. The path is
@@ -81,6 +125,44 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+
+      # `flutter pub get` resolves plugin platform implementations and exits 1 with
+      # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
+      # when none is installed, so even the analysis-only jobs need an SDK; the APK
+      # jobs need one to build regardless. This image ships none, so install it at the
+      # level compileSdk asks for (37).
+      - name: Set up Android SDK
+        run: |
+          set -euo pipefail
+          sdk="${RUNNER_TEMP:-${HOME:-/tmp}}/android-sdk"
+          manager="${sdk}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "${manager}" ]; then
+            echo "Installing Android command-line tools into ${sdk}."
+            tmp="$(dirname "${sdk}")/tmp-tools"
+            mkdir -p "${sdk}/cmdline-tools" "${tmp}/unpacked"
+            curl -fsSL -o "${tmp}/cmdline-tools.zip" \
+              "https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip"
+            if command -v unzip > /dev/null; then
+              unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}/unpacked"
+            else
+              python3 -m zipfile -e "${tmp}/cmdline-tools.zip" "${tmp}/unpacked"
+            fi
+            rm -rf "${sdk}/cmdline-tools/latest"
+            mv "${tmp}/unpacked/cmdline-tools" "${sdk}/cmdline-tools/latest"
+            rm -rf "${tmp}"
+          fi
+
+          # The licence prompts read stdin; `yes` answers them. It dies of SIGPIPE
+          # once sdkmanager stops reading, which is expected and not a failure.
+          yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
+
+          "${manager}" --sdk_root="${sdk}" --install \
+            "platform-tools" "platforms;android-canary-20261007" "build-tools;37.0.0"
+
+          echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
+          echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
+          echo "Android SDK ready at ${sdk}"
 
       - name: Install dependencies
         run: flutter pub get
@@ -116,6 +198,44 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+
+      # `flutter pub get` resolves plugin platform implementations and exits 1 with
+      # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
+      # when none is installed, so even the analysis-only jobs need an SDK; the APK
+      # jobs need one to build regardless. This image ships none, so install it at the
+      # level compileSdk asks for (37).
+      - name: Set up Android SDK
+        run: |
+          set -euo pipefail
+          sdk="${RUNNER_TEMP:-${HOME:-/tmp}}/android-sdk"
+          manager="${sdk}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "${manager}" ]; then
+            echo "Installing Android command-line tools into ${sdk}."
+            tmp="$(dirname "${sdk}")/tmp-tools"
+            mkdir -p "${sdk}/cmdline-tools" "${tmp}/unpacked"
+            curl -fsSL -o "${tmp}/cmdline-tools.zip" \
+              "https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip"
+            if command -v unzip > /dev/null; then
+              unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}/unpacked"
+            else
+              python3 -m zipfile -e "${tmp}/cmdline-tools.zip" "${tmp}/unpacked"
+            fi
+            rm -rf "${sdk}/cmdline-tools/latest"
+            mv "${tmp}/unpacked/cmdline-tools" "${sdk}/cmdline-tools/latest"
+            rm -rf "${tmp}"
+          fi
+
+          # The licence prompts read stdin; `yes` answers them. It dies of SIGPIPE
+          # once sdkmanager stops reading, which is expected and not a failure.
+          yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
+
+          "${manager}" --sdk_root="${sdk}" --install \
+            "platform-tools" "platforms;android-canary-20261007" "build-tools;37.0.0"
+
+          echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
+          echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
+          echo "Android SDK ready at ${sdk}"
 
       - name: Install dependencies
         run: flutter pub get
