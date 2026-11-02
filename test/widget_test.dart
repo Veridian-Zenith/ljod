@@ -23,26 +23,29 @@ void main() {
     expect(formatDuration(Duration.zero), '--:--');
   });
 
-  test('online lyrics lookup is on by default and stays off once switched', () async {
-    SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
-    final container = ProviderContainer(
-      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-    );
-    addTearDown(container.dispose);
+  test(
+    'online lyrics lookup is on by default and stays off once switched',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final container = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+      );
+      addTearDown(container.dispose);
 
-    expect(container.read(settingsProvider).lyricsLookup, isTrue);
+      expect(container.read(settingsProvider).lyricsLookup, isTrue);
 
-    await container.read(settingsProvider.notifier).setLyricsLookup(false);
-    expect(container.read(settingsProvider).lyricsLookup, isFalse);
+      await container.read(settingsProvider.notifier).setLyricsLookup(false);
+      expect(container.read(settingsProvider).lyricsLookup, isFalse);
 
-    // The choice has to survive a restart, or the toggle is decorative.
-    final reopened = ProviderContainer(
-      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-    );
-    addTearDown(reopened.dispose);
-    expect(reopened.read(settingsProvider).lyricsLookup, isFalse);
-  });
+      // The choice has to survive a restart, or the toggle is decorative.
+      final reopened = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+      );
+      addTearDown(reopened.dispose);
+      expect(reopened.read(settingsProvider).lyricsLookup, isFalse);
+    },
+  );
 
   testWidgets('LjodApp renders the shell and navigation', (tester) async {
     await _pumpApp(tester);

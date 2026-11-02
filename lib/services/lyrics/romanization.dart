@@ -101,7 +101,9 @@ String _romanizeJapanese(String text) {
       while (end < runes.length && _isKana(runes[end])) {
         end++;
       }
-      buffer.write(_kanaKit.toRomaji(String.fromCharCodes(runes.sublist(index, end))));
+      buffer.write(
+        _kanaKit.toRomaji(String.fromCharCodes(runes.sublist(index, end))),
+      );
       index = end;
       continue;
     }
@@ -184,11 +186,39 @@ String _romanizeHangul(String text) {
 // ---------------------------------------------------------------------------
 
 const Map<String, String> _cyrillic = {
-  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
-  'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
-  'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
-  'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
-  'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+  'а': 'a',
+  'б': 'b',
+  'в': 'v',
+  'г': 'g',
+  'д': 'd',
+  'е': 'e',
+  'ё': 'yo',
+  'ж': 'zh',
+  'з': 'z',
+  'и': 'i',
+  'й': 'y',
+  'к': 'k',
+  'л': 'l',
+  'м': 'm',
+  'н': 'n',
+  'о': 'o',
+  'п': 'p',
+  'р': 'r',
+  'с': 's',
+  'т': 't',
+  'у': 'u',
+  'ф': 'f',
+  'х': 'kh',
+  'ц': 'ts',
+  'ч': 'ch',
+  'ш': 'sh',
+  'щ': 'shch',
+  'ъ': '',
+  'ы': 'y',
+  'ь': '',
+  'э': 'e',
+  'ю': 'yu',
+  'я': 'ya',
 };
 
 String _romanizeCyrillic(String text) {

@@ -302,8 +302,7 @@ class LrclibRemote implements LyricsRemote {
         // A 5xx means LRCLIB is busy, not that we are asking too often. One
         // short retry covers it, and it must never park a cooldown: that is
         // what left the sheet saying "rate limited" indefinitely.
-        if ((status == 502 || status == 503 || status == 504) &&
-            attempt == 0) {
+        if ((status == 502 || status == 503 || status == 504) && attempt == 0) {
           await Future<void>.delayed(const Duration(milliseconds: 700));
           continue;
         }

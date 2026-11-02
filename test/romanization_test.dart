@@ -44,7 +44,11 @@ void main() {
     test('Thai is transliterated to readable Latin', () {
       final romanized = romanizeLyrics('สวัสดี');
       expect(romanized, isNotEmpty);
-      expect(RegExp(r'^[a-z]+$').hasMatch(romanized), isTrue, reason: romanized);
+      expect(
+        RegExp(r'^[a-z]+$').hasMatch(romanized),
+        isTrue,
+        reason: romanized,
+      );
     });
 
     test('Vietnamese loses its diacritics', () {
