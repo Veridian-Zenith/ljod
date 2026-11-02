@@ -3,8 +3,11 @@
 
 The preview panel re-serves the page it was registered with; if the images are
 embedded as base64 inside the HTML, a reload shows the *old* bytes until the
-HTML itself is rewritten. Serving `goldens/` over HTTP instead means a plain
-reload always fetches whatever PNG is on disk right now.
+HTML itself is rewritten. Serving `screenshots/` over HTTP instead means a
+plain reload always fetches whatever PNG is on disk right now.
+
+It serves the same files README.md embeds, not a copy, so the preview cannot
+describe a build the documentation no longer shows.
 
 Usage:
     python3 tool/screenshots/serve.py [port]
@@ -22,12 +25,16 @@ import socketserver
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
-GOLDENS = ROOT / "goldens"
+SCREENS = ROOT.parent.parent / "screenshots"
 
 CAPTIONS = {
-    "1-home.png": "Home — mini player bar",
-    "2-player.png": "Player — seek bar + transport bar",
-    "3-diagnostics.png": "Diagnostics — warnings and errors only",
+    "home.png": "Home — mini player bar",
+    "library.png": "Library — tracks, albums and recently added",
+    "player.png": "Player — seek bar and transport controls",
+    "lyrics.png": "Lyrics sheet — synced lines follow playback",
+    "insights.png": "Insights — plays, artists and listening time",
+    "settings.png": "Settings — appearance, scan and storage",
+    "diagnostics.png": "Diagnostics — warnings and errors only",
 }
 
 
@@ -38,11 +45,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    def translate_path(self, path: str) -> str:
+        # `/screenshots/<name>.png` is served from the repository's screenshots
+        # directory; nothing else in the project is exposed.
+        if path.startswith("/screenshots/"):
+            name = path.split("?", 1)[0].rsplit("/", 1)[-1]
+            return str(SCREENS / name)
+        return super().translate_path(path)
+
     def _index(self) -> None:
-        images = sorted(GOLDENS.glob("*.png"))
+        known = [SCREENS / name for name in CAPTIONS]
+        images = [p for p in known if p.exists()]
+        images += sorted(
+            p for p in SCREENS.glob("*.png") if p.name not in CAPTIONS
+        )
         cards = "\n".join(
             f'<figure><figcaption>{CAPTIONS.get(p.name, p.name)}</figcaption>'
-            f'<img src="/goldens/{p.name}?v={int(p.stat().st_mtime)}"></figure>'
+            f'<img src="/screenshots/{p.name}?v={int(p.stat().st_mtime)}"></figure>'
             for p in images
         )
         body = f"""<!doctype html><meta charset="utf-8"><title>Ljod screens</title>
