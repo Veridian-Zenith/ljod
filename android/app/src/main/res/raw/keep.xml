@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  audio_service resolves the notification small icon from a Dart string
+  (AudioServiceConfig.androidNotificationIcon = 'drawable/ic_stat_music_note').
+  Nothing on the Java/manifest side references the drawable, so AGP's resource
+  shrinker considers it unused and removes it from release builds, which makes
+  setSmallIcon throw Resources$NotFoundException the moment playback starts.
+
+  tools:keep pins it. Do not remove without replacing the Dart-side reference
+  with a real Java/manifest reference.
+-->
+<resources
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_music_note" />

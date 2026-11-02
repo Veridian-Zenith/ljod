@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/song_model.dart';
 import '../library/library_providers.dart';
 import 'ljod_audio_handler.dart';
+import 'media_permissions.dart';
 
 export 'ljod_audio_handler.dart'
     show LjodAudioHandler, LjodPlaybackHandler, PlaybackException;
@@ -125,6 +126,9 @@ class PlaybackController {
   /// unhandled future errors from fire-and-forget tap handlers.
   Future<void> _loadQueue(List<SongModel> songs, int index) async {
     try {
+      // The media notification is a runtime permission from Android 13; ask
+      // before the first sound so the controls exist when playback starts.
+      await ensureNotificationPermission();
       await _handler.loadQueue(songs, initialIndex: index);
     } on PlaybackException catch (error) {
       ref.read(playbackErrorProvider.notifier).report(error.message);
@@ -139,6 +143,7 @@ class PlaybackController {
     if (_handler.playbackState.value.playing) {
       await _handler.pause();
     } else {
+      await ensureNotificationPermission();
       await _handler.play();
     }
   }

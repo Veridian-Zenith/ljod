@@ -21,6 +21,8 @@ class DiagnosticsScreen extends ConsumerStatefulWidget {
 class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
   String? _log;
   bool _loading = true;
+  bool _includeInfo = false;
+  int _shown = 0;
 
   @override
   void initState() {
@@ -29,12 +31,22 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
   }
 
   Future<void> _load() async {
-    final log = await DiagnosticsLog.instance.read();
+    final log = await DiagnosticsLog.instance.read(includeInfo: _includeInfo);
+    final count = DiagnosticsLog.instance.count(includeInfo: _includeInfo);
     if (!mounted) return;
     setState(() {
       _log = log;
+      _shown = count;
       _loading = false;
     });
+  }
+
+  Future<void> _toggleInfo(bool value) async {
+    setState(() {
+      _includeInfo = value;
+      _loading = true;
+    });
+    await _load();
   }
 
   @override
@@ -79,14 +91,42 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           children: [
             Text(
-              'Ljod keeps a short, local trail of errors and playback events so '
-              'a crash can be read on the next launch. It never leaves this '
+              'Ljod keeps a short, local trail of warnings and errors so a '
+              'crash can be read on the next launch. It never leaves this '
               'device.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: LjodTheme.textSoft,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: _includeInfo,
+              onChanged: _toggleInfo,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Include routine events',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: LjodTheme.textStrong,
+                ),
+              ),
+              subtitle: Text(
+                'Queue changes and transport toggles. Off by default: they are '
+                'only useful when reconstructing a fault.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: LjodTheme.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (!_loading)
+              Text(
+                _shown == 1 ? '1 entry' : '$_shown entries',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: LjodTheme.textMuted,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            const SizedBox(height: 12),
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 24),
@@ -95,7 +135,9 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
             else if (log == null || log.isEmpty)
               Panel(
                 child: Text(
-                  'Nothing logged yet. That is the good outcome.',
+                  _includeInfo
+                      ? 'Nothing logged yet. That is the good outcome.'
+                      : 'No warnings or errors. That is the good outcome.',
                   style: theme.textTheme.bodyMedium,
                 ),
               )

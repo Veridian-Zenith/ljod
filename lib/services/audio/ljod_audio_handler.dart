@@ -51,7 +51,10 @@ class LjodAudioHandler extends BaseAudioHandler
       _player.playbackEventStream.listen(
         (_) => _broadcastState(),
         onError: (Object error, StackTrace stack) {
-          DiagnosticsLog.instance.log('player error: $error');
+          DiagnosticsLog.instance.log(
+            'player error: $error',
+            level: DiagnosticsLevel.error,
+          );
           playbackState.add(
             playbackState.value.copyWith(
               errorMessage: error.toString(),
@@ -92,6 +95,7 @@ class LjodAudioHandler extends BaseAudioHandler
     DiagnosticsLog.instance.log(
       '${playing ? 'play' : 'pause'} “${item.title}”'
       '${item.artist == null ? '' : ' — ${item.artist}'}',
+      level: DiagnosticsLevel.info,
     );
   }
 
@@ -134,6 +138,7 @@ class LjodAudioHandler extends BaseAudioHandler
     final index = initialIndex.clamp(0, songs.length - 1);
     DiagnosticsLog.instance.log(
       'queue: ${songs.length} tracks, starting at “${songs[index].title}”',
+      level: DiagnosticsLevel.info,
     );
 
     queue.add(_songs.map((song) => song.toMediaItem()).toList(growable: false));
