@@ -64,3 +64,6 @@ local.properties
 android/app/keystore/node_modules/.cache
 coverage/
 flutter_sysroot_cache/
+
+# Imported conversation/attachment artifacts, local only
+/.cloud-attachments/
