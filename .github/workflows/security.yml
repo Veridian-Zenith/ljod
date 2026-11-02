@@ -80,8 +80,12 @@ jobs:
           # once sdkmanager stops reading, which is expected and not a failure.
           yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
 
+          # The NDK is required, not optional: the `jni` plugin compiles native
+          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
+          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
           "${manager}" --sdk_root="${sdk}" --install \
-            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
 
           echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"

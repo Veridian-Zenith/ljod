@@ -83,8 +83,12 @@ jobs:
           # once sdkmanager stops reading, which is expected and not a failure.
           yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
 
+          # The NDK is required, not optional: the `jni` plugin compiles native
+          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
+          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
           "${manager}" --sdk_root="${sdk}" --install \
-            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
 
           echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
@@ -157,8 +161,12 @@ jobs:
           # once sdkmanager stops reading, which is expected and not a failure.
           yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
 
+          # The NDK is required, not optional: the `jni` plugin compiles native
+          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
+          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
           "${manager}" --sdk_root="${sdk}" --install \
-            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
 
           echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
@@ -230,8 +238,12 @@ jobs:
           # once sdkmanager stops reading, which is expected and not a failure.
           yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
 
+          # The NDK is required, not optional: the `jni` plugin compiles native
+          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
+          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
           "${manager}" --sdk_root="${sdk}" --install \
-            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
 
           echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
@@ -245,10 +257,55 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: ljod-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+      # There is no artifact service on this host: the runner identifies as
+      # GHES, so upload-artifact fails with "@actions/artifact v2.0.0+ ...
+      # not supported on GHES" and the mirror carries only v5-v7, leaving no
+      # older release to pin. A prerelease is the replacement: it gives the
+      # debug APK a stable download URL without cutting a version tag, and
+      # re-runs replace the asset instead of accumulating copies.
+      #
+      # Forgejo creates the `debug` tag on first publication, because a release
+      # must hang off a tag; that tag is the only one this file ever creates.
+      - name: Publish debug APK as a prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          api="${SERVER}/api/v1/repos/${REPO}"
+          auth="Authorization: token ${TOKEN}"
+          tag="debug"
+          apk="ljod-debug.apk"
+          cp build/app/outputs/flutter-apk/app-debug.apk "${apk}"
+
+          status="$(curl -sS -o /tmp/debug-release.json -w '%{http_code}' \
+            -H "${auth}" "${api}/releases/tags/${tag}")"
+          if [ "${status}" = "404" ]; then
+            echo "No ${tag} release yet; creating it."
+            curl -sS -f -X POST "${api}/releases" \
+              -H "${auth}" -H 'Content-Type: application/json' \
+              -d "{\"tag_name\":\"${tag}\",\"target_commitish\":\"${SHA}\",\"name\":\"Debug build\",\"body\":\"Rolling debug APK from main. Replaced on every push; unsigned for release use.\",\"prerelease\":true,\"draft\":false}" \
+              > /tmp/debug-release.json
+          elif [ "${status}" != "200" ]; then
+            echo "Could not look up the ${tag} release (HTTP ${status}):" >&2
+            cat /tmp/debug-release.json >&2
+            exit 1
+          fi
+
+          release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' /tmp/debug-release.json)"
+
+          # Re-runs must replace the asset, not fail on a name clash.
+          stale="$(curl -sS -f -H "${auth}" "${api}/releases/${release_id}/assets" \
+            | python3 -c 'import json,sys; n=sys.argv[1]; print(" ".join(str(a["id"]) for a in json.load(sys.stdin) if a["name"]==n))' "${apk}")"
+          for asset_id in ${stale}; do
+            echo "Removing stale asset ${asset_id}."
+            curl -sS -f -X DELETE -H "${auth}" \
+              "${api}/releases/${release_id}/assets/${asset_id}" -o /dev/null
+          done
+
+          curl -sS -f -X POST "${api}/releases/${release_id}/assets?name=${apk}" \
+            -H "${auth}" -F "attachment=@${apk}" -o /dev/null
+          echo "Uploaded ${apk} to ${SERVER}/${REPO}/releases/tag/${tag}"
