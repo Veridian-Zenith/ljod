@@ -13,7 +13,7 @@ dependencies:
 
   # UI — the official Material UI package (Material 3 Expressive).
   # Flutter 3.47 moved package:flutter/material.dart into material_ui.
-  material_ui: ^1.9.0
+  material_ui: ^1.10.0
 
   # State management & DI
   flutter_riverpod: ^3.4.3
