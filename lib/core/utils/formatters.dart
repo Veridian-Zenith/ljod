@@ -12,16 +12,14 @@ String formatDuration(Duration duration, {String empty = '--:--'}) {
 }
 
 String formatCount(int count) {
-  if (count >= 1000000) {
-    final value = count / 1000000;
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)}m';
-  }
-  if (count >= 1000) {
-    final value = count / 1000;
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)}k';
-  }
-  return '$count';
+  if (count < 1000) return '$count';
+  // Promote before rounding could print "1000k" for a count just under a
+  // million.
+  if (count < 999500) return '${_compact(count / 1000)}k';
+  return '${_compact(count / 1000000)}m';
 }
+
+String _compact(double value) => value.toStringAsFixed(value >= 10 ? 0 : 1);
 
 /// Human-readable byte size for cache and storage rows.
 String formatBytes(int bytes) {

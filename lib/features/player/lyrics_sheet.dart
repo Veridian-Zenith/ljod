@@ -36,6 +36,13 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   String? _songId;
   ScrollController? _scrollController;
 
+  /// Romanizations for [_romanizedFor]. The sheet rebuilds on every playback
+  /// position update, and converting pinyin or kana for every line on every
+  /// tick is far too much work for text that cannot change while the same
+  /// [Lyrics] instance is on screen.
+  Lyrics? _romanizedFor;
+  List<String> _romanizedLines = const [];
+
   String _romanizedLine(String text) {
     final romanized = romanizeLyrics(text).trim();
     if (romanized.isEmpty) return '';
@@ -45,8 +52,17 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
     return romanized;
   }
 
+  List<String> _romanizations(Lyrics lyrics) {
+    if (identical(_romanizedFor, lyrics)) return _romanizedLines;
+    _romanizedFor = lyrics;
+    _romanizedLines = List<String>.unmodifiable([
+      for (final line in lyrics.lines) _romanizedLine(line.text),
+    ]);
+    return _romanizedLines;
+  }
+
   bool _canRomanize(Lyrics lyrics) =>
-      lyrics.lines.any((line) => _romanizedLine(line.text).isNotEmpty);
+      _romanizations(lyrics).any((line) => line.isNotEmpty);
 
   void _refresh(String songId) {
     ref.read(lyricsRefreshProvider.notifier).request(songId);
@@ -54,9 +70,12 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   }
 
   Future<void> _enableLookupAndRetry(String songId) async {
+    // Bump the token first: turning the setting on already rebuilds the
+    // provider, so forcing afterwards asked LRCLIB twice for one tap.
+    ref.read(lyricsRefreshProvider.notifier).request(songId);
     await ref.read(settingsProvider.notifier).setLyricsLookup(true);
     if (!mounted) return;
-    _refresh(songId);
+    ref.invalidate(lyricsProvider(songId));
   }
 
   /// Keeps the active line at the follow position.
@@ -124,6 +143,8 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
       _followPlayback = true;
       _showRomanization = null;
       _scrollController = null;
+      _romanizedFor = null;
+      _romanizedLines = const [];
     }
     final lyricsAsync = ref.watch(lyricsProvider(song.id));
     final position = ref.watch(positionProvider).value ?? Duration.zero;
@@ -166,7 +187,10 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
             ),
             const Divider(height: 1),
             Expanded(
+              // A rebuild with lyrics already on screen — a refreshed lookup or
+              // a library update — must not blank the sheet to a spinner.
               child: lyricsAsync.when(
+                skipLoadingOnReload: true,
                 loading: () => const LoadingView(label: 'Looking for lyrics…'),
                 error: (error, _) => _StateMessage(
                   icon: Icons.cloud_off_rounded,
@@ -207,7 +231,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
                           key: key,
                           line: line,
                           romanized: showRomanization
-                              ? _romanizedLine(line.text)
+                              ? _romanizations(lyrics)[index]
                               : '',
                           isActive: lyrics.synced && index == active,
                           dimmed: lyrics.synced && index != active,
@@ -391,13 +415,10 @@ class _Header extends StatelessWidget {
             runSpacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              if (lyrics != null && lyrics.synced)
+                const LjodBadge(label: 'SYNCED', isActive: true),
               if (sourceLabel != null)
-                LjodBadge(
-                  label: lyrics?.synced == true ? 'SYNCED' : sourceLabel,
-                  isActive: true,
-                ),
-              if (lyrics != null && !lyrics.synced && sourceLabel != null)
-                LjodBadge(label: sourceLabel),
+                LjodBadge(label: sourceLabel, isActive: lyrics?.synced != true),
               if (result?.cached == true) const LjodBadge(label: 'CACHED'),
               if (canRomanize)
                 _Chip(

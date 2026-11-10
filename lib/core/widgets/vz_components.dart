@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/song_model.dart';
 import '../../core/theme/ljod_theme.dart';
 import '../../core/utils/formatters.dart';
@@ -78,6 +79,7 @@ class CoverArt extends StatelessWidget {
     this.label = '',
     this.icon = Icons.graphic_eq_rounded,
     this.showBorder = false,
+    this.showArtwork = true,
   });
 
   /// Path to a cached image (never an audio file).
@@ -88,31 +90,60 @@ class CoverArt extends StatelessWidget {
   final IconData icon;
   final bool showBorder;
 
+  /// Whether the cached image is decoded and painted instead of the fallback.
+  ///
+  /// On by default. Decoding is bounded by [_decodeSize], which asks the engine
+  /// for a bitmap no larger than the box actually painted (capped at 1024 px),
+  /// so a 2000×2000 cover costs a tile-sized image rather than a
+  /// full-resolution one. Full-size decoding for a 54 px row was what made long
+  /// lists churn the image cache; keeping the picture switched off everywhere
+  /// but the player only made working covers look missing.
+  ///
+  /// The media notification is unaffected — it reads `artUri` from the media
+  /// item, not from this widget.
+  final bool showArtwork;
+
+  /// Paths whose decode already failed once, so a broken cover in a scrolling
+  /// list is logged once instead of on every rebuild.
+  static final Set<String> _loggedFailures = <String>{};
+
   @override
   Widget build(BuildContext context) {
-    final imagePath = path;
-    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-    final decodeSize = (size.isFinite ? size * pixelRatio : 512).round().clamp(
-      64,
-      1024,
-    );
-    final child = imagePath != null && imagePath.isNotEmpty
-        ? SizedBox.expand(
+    final imagePath = showArtwork ? path : null;
+    final child = imagePath == null || imagePath.isEmpty
+        ? _fallback(context)
+        : SizedBox.expand(
             child: Image.file(
               File(imagePath),
               fit: BoxFit.cover,
-              cacheWidth: decodeSize,
-              cacheHeight: decodeSize,
+              cacheWidth: _decodeSize(context),
+              cacheHeight: _decodeSize(context),
               filterQuality: FilterQuality.medium,
               gaplessPlayback: true,
-              errorBuilder: (_, _, _) => _fallback(context),
+              // A decode failure used to be invisible: the row simply showed
+              // initials, so "no art" could mean an empty file, a deleted
+              // cache or a corrupt image with no way to tell them apart.
+              errorBuilder: (_, error, _) {
+                if (_loggedFailures.length < 32 &&
+                    _loggedFailures.add(imagePath)) {
+                  DiagnosticsLog.instance.log(
+                    'artwork: could not decode $imagePath ($error)',
+                    level: DiagnosticsLevel.warning,
+                  );
+                }
+                return _fallback(context);
+              },
             ),
-          )
-        : _fallback(context);
+          );
 
+    // An infinite size means "fill the parent". Passing it through as a width
+    // asks layout for an infinite box and relies on the parent's constraints to
+    // tighten it; leaving the dimension unset expresses the same intent without
+    // ever handing infinity to the layout engine.
+    final finite = size.isFinite;
     return Container(
-      width: size,
-      height: size,
+      width: finite ? size : null,
+      height: finite ? size : null,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
         border: showBorder ? Border.all(color: LjodTheme.borderLight) : null,
@@ -122,10 +153,21 @@ class CoverArt extends StatelessWidget {
     );
   }
 
+  /// Pixels to decode at, so a small cover is not held at full resolution.
+  int _decodeSize(BuildContext context) {
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    return (size.isFinite ? size * pixelRatio : 512).round().clamp(64, 1024);
+  }
+
   Widget _fallback(BuildContext context) {
     final palette = [LjodTheme.amber, LjodTheme.crimson, LjodTheme.gold];
     final base = label.isEmpty ? icon.codePoint : label.codeUnitAt(0);
     final color = palette[base % palette.length];
+    // Album tiles hand this widget an unbounded size. An infinite font or icon
+    // size lays out to nothing, which is why those covers showed no initials at
+    // all; fall back to a fixed, readable size when the box is not measurable.
+    final glyphSize = size.isFinite ? size * 0.26 : 18.0;
+    final glyphIconSize = size.isFinite ? size * 0.34 : 22.0;
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -146,13 +188,13 @@ class CoverArt extends StatelessWidget {
           ),
           Center(
             child: label.isEmpty
-                ? Icon(icon, size: size * 0.34, color: LjodTheme.textMuted)
+                ? Icon(icon, size: glyphIconSize, color: LjodTheme.textMuted)
                 : Text(
                     albumInitials(label),
                     style: TextStyle(
                       fontFamily: LjodTheme.monoFamily,
                       fontWeight: FontWeight.w800,
-                      fontSize: size * 0.26,
+                      fontSize: glyphSize,
                       color: color.withValues(alpha: 0.92),
                       letterSpacing: -1,
                     ),
@@ -193,11 +235,15 @@ class SongCover extends StatelessWidget {
     required this.song,
     this.size = 56,
     this.radius = 16,
+    this.showArtwork = true,
   });
 
   final SongModel song;
   final double size;
   final double radius;
+
+  /// See [CoverArt.showArtwork].
+  final bool showArtwork;
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +252,7 @@ class SongCover extends StatelessWidget {
       size: size,
       radius: radius,
       label: song.album.isEmpty ? song.title : song.album,
+      showArtwork: showArtwork,
     );
   }
 }

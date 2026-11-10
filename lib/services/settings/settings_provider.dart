@@ -83,10 +83,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
     return AppSettings(
       expressiveMotion: prefs.getBool(_motion) ?? true,
-      // On by default: the lyrics sheet is how most listeners read lyrics, and
-      // an opt-in toggle made it look broken. Lookups stay one per track and
-      // are cached, and the Settings toggle still takes the network away.
-      lyricsLookup: prefs.getBool(_lyrics) ?? true,
+      // Off by default, which is what the privacy documentation promises: the
+      // only outbound request in the app needs an explicit opt-in. Lookups stay
+      // one per track, are cached, and the toggle takes the network away again.
+      lyricsLookup: prefs.getBool(_lyrics) ?? false,
       sortFavoritesFirst: prefs.getBool(_favoriteFirst) ?? false,
       folderFilterMode: mode,
       folderFilters: prefs.getStringList(_folderFilters) ?? const [],

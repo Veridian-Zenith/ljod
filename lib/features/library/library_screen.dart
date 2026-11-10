@@ -132,6 +132,34 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ),
             ),
           ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: songs.isEmpty
+                          ? null
+                          : () => controller.playAll(songs),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                      label: Text(_filter == 1 ? 'Play pinned' : 'Play all'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: songs.isEmpty
+                          ? null
+                          : () => controller.shuffleAll(songs),
+                      icon: const Icon(Icons.shuffle_rounded, size: 18),
+                      label: const Text('Shuffle'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (byAlbum.length > 1)
             SliverToBoxAdapter(
               child: SizedBox(

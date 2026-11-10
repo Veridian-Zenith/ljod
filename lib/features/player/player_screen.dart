@@ -60,6 +60,7 @@ class PlayerScreen extends ConsumerWidget {
             children: [
               _TopBar(
                 queueLength: queue.length,
+                shuffle: shuffle,
                 onQueue: song == null ? null : () => _showQueueSheet(context),
               ),
               Expanded(
@@ -160,9 +161,14 @@ class PlayerScreen extends ConsumerWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.queueLength, this.onQueue});
+  const _TopBar({
+    required this.queueLength,
+    required this.shuffle,
+    this.onQueue,
+  });
 
   final int queueLength;
+  final bool shuffle;
   final VoidCallback? onQueue;
 
   @override
@@ -191,7 +197,11 @@ class _TopBar extends StatelessWidget {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  queueLength == 0 ? 'Queue empty' : 'From your library',
+                  queueLength == 0
+                      ? 'Queue empty'
+                      : shuffle
+                      ? 'Shuffled queue'
+                      : 'In library order',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: LjodTheme.textMuted,
                     fontSize: 10,
@@ -268,6 +278,8 @@ class _ArtStage extends StatelessWidget {
               song: song,
               size: size,
               radius: LjodTheme.radiusXl,
+              // The one place a cover is decoded: nowhere in a scrolling list.
+              showArtwork: true,
             ),
           ),
         ],
@@ -692,6 +704,13 @@ class _QueueSheet extends ConsumerWidget {
                     style: LjodTheme.display(theme.textTheme, size: 24),
                   ),
                   const Spacer(),
+                  IconButton(
+                    tooltip: 'Reshuffle the queue',
+                    onPressed: queue.length < 2
+                        ? null
+                        : () => controller.reshuffle(),
+                    icon: const Icon(Icons.shuffle_rounded, size: 18),
+                  ),
                   LjodBadge(label: '${queue.length} tracks'),
                 ],
               ),

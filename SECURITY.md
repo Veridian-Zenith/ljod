@@ -51,7 +51,7 @@ immediately rather than opening an issue.
 Releases are signed with the project's upload keystore. To check an APK:
 
 ```sh
-apksigner verify --print-certs --verbose ljod-0.3.2-arm64-v8a.apk
+apksigner verify --print-certs --verbose ljod-0.4.0-arm64-v8a.apk
 ```
 
 If the certificate does not belong to Veridian Zenith, do not install it.

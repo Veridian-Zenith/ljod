@@ -15,6 +15,7 @@ import '../stats/stats_screen.dart';
 import 'diagnostics_screen.dart';
 import 'folder_rules_screen.dart';
 import 'info_screen.dart';
+import 'licenses_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -160,7 +161,7 @@ class SettingsScreen extends ConsumerWidget {
                     .when(
                       data: (bytes) =>
                           '${formatBytes(bytes)} used · '
-                          '${formatBytes(ArtworkCache.budgetBytes)} ceiling',
+                          '${formatBytes(ArtworkCache.defaultBudgetBytes)} ceiling',
                       error: (_, _) => 'Size unavailable on this platform',
                       loading: () => 'Measuring…',
                     ),
@@ -287,19 +288,13 @@ class SettingsScreen extends ConsumerWidget {
               _SettingRow(
                 icon: Icons.code_rounded,
                 title: 'Open-source licences',
-                subtitle: 'Packages that make the forge run',
-                onTap: () => showLicensePage(
-                  context: context,
-                  applicationName: 'Ljod',
-                  applicationVersion: LjodAppInfo.version,
-                  applicationIcon: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Icon(
-                      Icons.graphic_eq_rounded,
-                      size: 40,
-                      color: LjodTheme.amber,
-                    ),
-                  ),
+                subtitle: 'Every bundled package and its full licence text',
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: LjodTheme.textMuted,
+                ),
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(builder: (_) => const LicensesScreen()),
                 ),
               ),
             ],

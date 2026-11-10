@@ -6,6 +6,70 @@ All notable changes to Ljod are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-05
+
+### Added
+
+- A real shuffle engine: the queue is dealt with a Fisher–Yates shuffle that
+  keeps the playing track first, instead of trusting `just_audio`'s private
+  shuffle order. Up-next, the queue sheet and the notification now show the
+  order that will actually play, in both shuffle states, and toggling shuffle
+  off restores library order at the same position.
+- **Play all** and **Shuffle** buttons in the library, acting on the current
+  filter, album selection and sort.
+- The last session is remembered across restarts: queue, track, position,
+  shuffle and repeat come back paused, so the mini player and the full player
+  resume where they were.
+
+### Fixed
+
+- Cover art is downscaled on Android before it is cached, so the artwork
+  directory no longer grows to gigabytes. Applies to embedded art, sidecar
+  images and platform extraction alike; the full-size original is pruned after
+  the 1024 px JPEG is written. Covers large enough to hit the old 4 MiB ceiling
+  are now accepted and shrunk instead of being dropped, which is why so many
+  tagged tracks had no artwork.
+- A song row can no longer keep pointing at a cover file that no longer exists.
+  Opening the app with such rows showed no artwork and logged a decode failure
+  per track; rescans could not repair them either, because the upsert preserved
+  the old path. Stored paths are now checked once at load and before every scan,
+  the dead ones are forgotten, and a background scan re-extracts those covers
+  without asking for permission.
+- Extracted covers are no longer thrown away by the artwork cache. Trimming cut
+  the directory back to a 192 MiB budget *including* covers the library pointed
+  at, and every deleted path was then cleared in the database, so a scan could
+  extract hundreds of covers and still leave most tracks with no art. Trimming
+  now only removes files nothing references; a multi-megabyte artwork library is
+  allowed to keep its covers. The diagnostics line counts only files that are
+  actually on disk, so its number matches what the app shows.
+- Artwork is visible everywhere, not just in the full-screen player. Every list,
+  grid, rail, queue row and the mini player left `CoverArt.showArtwork` at its
+  default of `false`, so a cached cover was replaced by the initials tile no
+  matter how well the extraction worked. Decoding is capped to the painted size,
+  so showing covers in lists does not reintroduce the scrolling stutter, and a
+  cover that fails to decode now logs to Diagnostics instead of silently
+  painting the fallback.
+- Artwork no longer disappears for good. Writing a cover re-creates the cache
+  directory when "Clear artwork cache" or "Clear library cache" deleted it
+  (every write had been failing silently, so no cover could come back); a scan
+  that cannot re-read tags no longer prunes covers the database still points at;
+  and clearing the cache stores "no artwork" as null instead of an empty path,
+  which the notification tried to decode as a directory.
+- Artwork is found in far more libraries. Embedded pictures are read in the
+  scan isolate and, on Android, through `MediaMetadataRetriever` from the
+  content URI; when a track has no embedded picture the scan uses an image
+  beside it (`cover`, `folder`, `front`, `album`, `artwork`, `thumb`, or the
+  track's own name) in JPEG, PNG, WebP, GIF or BMP. The per-file ceiling rose
+  from 2 to 4 MiB and oversized art is downscaled instead of dropped. The
+  diagnostics line now reports how many covers each source produced, replacing
+  a warning that claimed "no cover" before those fallbacks had run.
+- The library no longer stays empty after the setup scan. A scan finishing while
+  the provider was still reading the database was overwritten by that pre-scan
+  (empty) read, and setup could start a second scan for a library it had just
+  indexed; the newer state now wins and a populated library is never rescanned
+  by setup. A scan that unexpectedly returns no tracks keeps the existing rows
+  instead of deleting them.
+
 ### Changed
 
 - Releases are built per ABI for `arm64-v8a` and `armeabi-v7a` with debug
@@ -44,7 +108,9 @@ All notable changes to Ljod are documented here. The format follows
 - The seek bar follows the theme's expressive slider instead of overriding it
   with a capsule thumb and a 5px track.
 - The equaliser capsule over the album art in the full player is gone.
-- Online lyrics lookup is on by default; the Settings toggle still turns it off.
+- Online lyrics lookup stays off by default: the setting had been read as
+  missing and defaulted to on, while every document, the sheet and the setup
+  step promised an opt-in. The toggle still turns it on.
 
 ## [0.3.1] — 2026-11-02
 
@@ -110,7 +176,8 @@ All notable changes to Ljod are documented here. The format follows
 
 Initial scaffold: bundle metadata, theme shell and placeholder screens.
 
-[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.3.2...HEAD
+[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.4.0...HEAD
+[0.4.0]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.4.0
 [0.3.2]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.2
 [0.3.1]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.1
 [0.3.0]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.0

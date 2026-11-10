@@ -10,14 +10,14 @@ Edit both places (see [BUILDING.md](BUILDING.md#versioning)):
 
 ```yaml
 # pubspec.yaml
-version: 0.3.2+5
+version: 0.4.0+6
 ```
 
 ```dart
 // lib/core/app_info.dart
-static const String version = '0.3.2+5';
-static const String versionName = '0.3.2';
-static const int buildNumber = 4;
+static const String version = '0.4.0+6';
+static const String versionName = '0.4.0';
+static const int buildNumber = 6;
 ```
 
 ```sh
@@ -29,10 +29,10 @@ flutter test test/app_info_test.dart   # fails if the two drifted
 The tag must be `v<versionName>` — no build number. The workflow enforces this.
 
 ```sh
-git commit -am "Release 0.3.2"
+git commit -am "Release 0.4.0"
 git push origin main
-git tag v0.3.2
-git push origin v0.3.2
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 A tag push is not the only way: the workflow can also be run by hand to rebuild

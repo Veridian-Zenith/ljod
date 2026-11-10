@@ -30,9 +30,13 @@ class AppDatabase {
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 3) {
-          // The library is a rebuildable cache; schema changes are cheap.
-          await db.execute('DROP TABLE IF EXISTS songs');
+          // The library is a rebuildable cache; schema changes are cheap. Every
+          // table this schema creates has to be dropped: a leftover
+          // `playlist_songs` makes the CREATE below fail and leaves the database
+          // unopenable.
+          await db.execute('DROP TABLE IF EXISTS playlist_songs');
           await db.execute('DROP TABLE IF EXISTS playlists');
+          await db.execute('DROP TABLE IF EXISTS songs');
           await _createSchema(db);
         }
       },
@@ -105,6 +109,23 @@ class AppDatabase {
   Future<void> clearArtworkPaths() async {
     final db = await database;
     await db.update('songs', {'artworkPath': null});
+  }
+
+  /// Forgets the paths of covers the artwork cache had to evict to stay inside
+  /// its budget, so no row points at a file that is gone.
+  Future<void> clearArtworkPathsFor(Iterable<String> paths) async {
+    if (paths.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final path in paths) {
+      batch.update(
+        'songs',
+        {'artworkPath': null},
+        where: 'artworkPath = ?',
+        whereArgs: [path],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<void> upsertSongs(List<SongModel> songs) async {

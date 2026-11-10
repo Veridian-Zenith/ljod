@@ -33,6 +33,9 @@ class SongModel {
   final int trackNumber;
 
   /// Cached cover art on disk. Embedded art is extracted during a library scan.
+  ///
+  /// Empty means the cache was cleared for this track; treat it exactly like
+  /// null wherever it is consumed.
   final String? artworkPath;
 
   final bool isFavorite;
@@ -52,7 +55,12 @@ class SongModel {
       artist: displayArtist,
       album: displayAlbum,
       duration: duration > Duration.zero ? duration : null,
-      artUri: artworkPath == null ? null : Uri.file(artworkPath!),
+      // An empty path is how "no artwork" was stored after clearing the cache;
+      // `Uri.file('')` is a directory URI, which made the notification try to
+      // decode a folder and show nothing.
+      artUri: artworkPath == null || artworkPath!.isEmpty
+          ? null
+          : Uri.file(artworkPath!),
       extras: {'path': path},
     );
   }
@@ -71,6 +79,7 @@ class SongModel {
     int? playCount,
     DateTime? lastPlayed,
     DateTime? addedAt,
+    bool clearArtwork = false,
   }) {
     return SongModel(
       id: id ?? this.id,
@@ -81,7 +90,8 @@ class SongModel {
       albumArtist: albumArtist ?? this.albumArtist,
       duration: duration ?? this.duration,
       trackNumber: trackNumber ?? this.trackNumber,
-      artworkPath: artworkPath ?? this.artworkPath,
+      // `copyWith` cannot otherwise express "no artwork": null means "unchanged".
+      artworkPath: clearArtwork ? null : (artworkPath ?? this.artworkPath),
       isFavorite: isFavorite ?? this.isFavorite,
       playCount: playCount ?? this.playCount,
       lastPlayed: lastPlayed ?? this.lastPlayed,

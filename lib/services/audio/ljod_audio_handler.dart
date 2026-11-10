@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/song_model.dart';
+import 'shuffle_order.dart';
 
 class PlaybackException implements Exception {
   const PlaybackException(this.message);
@@ -27,22 +29,38 @@ abstract class LjodPlaybackHandler implements AudioHandler {
   Stream<int?> get currentIndexStream;
   Stream<SongModel?> get currentSongStream;
 
-  /// The songs currently loaded into the player, in queue order.
+  /// The songs currently loaded into the player, in the order they will play.
   List<SongModel> get songs;
+
+  /// The queue before shuffling, so the unshuffled order can be restored and
+  /// persisted across launches.
+  List<SongModel> get baseSongs;
+
+  bool get shuffleEnabled;
 
   Future<void> loadQueue(
     List<SongModel> songs, {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
+    bool? shuffle,
   });
 
   Future<void> setShuffleEnabled(bool enabled);
+
+  /// Deals the current queue again, keeping the playing track first.
+  Future<void> reshuffle();
   Future<void> setVolume(double volume);
   Future<void> disposePlayer();
 }
 
 /// Bridges `just_audio` into the Android media session / notification stack.
+///
+/// Shuffle is handled here rather than by `just_audio`: the plugin's shuffle
+/// order is private, so the notification and the app's up-next strip could not
+/// agree with it. Ljod materialises the shuffled order as the queue itself, and
+/// keeps `just_audio`'s own shuffle disabled. That makes "what plays next" a
+/// property of the queue, which everything else already reads.
 class LjodAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler
     implements LjodPlaybackHandler {
@@ -72,14 +90,19 @@ class LjodAudioHandler extends BaseAudioHandler
       }),
     );
     _subscriptions.add(_player.loopModeStream.listen((_) => _broadcastState()));
-    _subscriptions.add(
-      _player.shuffleModeEnabledStream.listen((_) => _broadcastState()),
-    );
   }
 
   final AudioPlayer _player;
   final List<StreamSubscription<Object?>> _subscriptions = [];
+  final Random _random = Random();
+
+  /// The queue as the caller handed it over, unshuffled.
+  List<SongModel> _baseOrder = const [];
+
+  /// The order that actually plays; equals [_baseOrder] when shuffle is off.
   List<SongModel> _songs = const [];
+
+  bool _shuffle = false;
   String? _loggedItemId;
   bool? _loggedPlaying;
 
@@ -105,6 +128,12 @@ class LjodAudioHandler extends BaseAudioHandler
   List<SongModel> get songs => _songs;
 
   @override
+  List<SongModel> get baseSongs => _baseOrder;
+
+  @override
+  bool get shuffleEnabled => _shuffle;
+
+  @override
   Stream<Duration> get positionStream => _player.positionStream;
   @override
   Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
@@ -116,12 +145,17 @@ class LjodAudioHandler extends BaseAudioHandler
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
 
   /// Emits the current [SongModel] as the queue advances, including auto-play.
+  ///
+  /// Distinct by id: reordering the queue (shuffle on/off) changes the current
+  /// index without changing the track, and that must not look like a new play.
   @override
   Stream<SongModel?> get currentSongStream {
-    return _player.currentIndexStream.map((index) {
-      if (index == null || index < 0 || index >= _songs.length) return null;
-      return _songs[index];
-    });
+    return _player.currentIndexStream
+        .map((index) {
+          if (index == null || index < 0 || index >= _songs.length) return null;
+          return _songs[index];
+        })
+        .distinct((previous, next) => previous?.id == next?.id);
   }
 
   @override
@@ -130,19 +164,45 @@ class LjodAudioHandler extends BaseAudioHandler
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
+    bool? shuffle,
   }) async {
     if (songs.isEmpty) {
       throw const PlaybackException('There is nothing in the queue to play.');
     }
-    _songs = List.unmodifiable(songs);
-    final index = initialIndex.clamp(0, songs.length - 1);
+    if (shuffle != null) _shuffle = shuffle;
+    _baseOrder = List.unmodifiable(songs);
+
+    final start = initialIndex.clamp(0, songs.length - 1);
+    final order = _shuffle
+        ? _applyShuffle(_baseOrder, first: start)
+        : _baseOrder;
     DiagnosticsLog.instance.log(
-      'queue: ${songs.length} tracks, starting at “${songs[index].title}”',
+      'queue: ${order.length} tracks'
+      '${_shuffle ? ' (shuffled)' : ''}, starting at '
+      '“${order[_shuffle ? 0 : start].title}”',
       level: DiagnosticsLevel.info,
     );
 
+    await _applyQueue(
+      order,
+      _shuffle ? 0 : start,
+      initialPosition: initialPosition,
+      autoPlay: autoPlay,
+    );
+  }
+
+  /// Swaps in a new playing order without losing the track position.
+  Future<void> _applyQueue(
+    List<SongModel> order,
+    int index, {
+    required Duration initialPosition,
+    required bool autoPlay,
+  }) async {
+    _songs = List.unmodifiable(order);
+    final start = index.clamp(0, _songs.length - 1);
+
     queue.add(_songs.map((song) => song.toMediaItem()).toList(growable: false));
-    mediaItem.add(_songs[index].toMediaItem());
+    mediaItem.add(_songs[start].toMediaItem());
 
     final sources = _songs
         .map((song) {
@@ -156,19 +216,85 @@ class LjodAudioHandler extends BaseAudioHandler
     try {
       await _player.setAudioSources(
         sources,
-        initialIndex: index,
+        initialIndex: start,
         initialPosition: initialPosition,
       );
     } on PlayerException catch (error) {
       throw PlaybackException(
-        'Could not open “${_songs[index].title}”: ${error.message}',
+        'Could not open “${_songs[start].title}”: ${error.message}',
       );
     } on PlayerInterruptedException {
       // A newer load superseded this one; nothing to report.
       return;
     }
 
+    _broadcastState();
     if (autoPlay) await play();
+  }
+
+  List<SongModel> _applyShuffle(List<SongModel> songs, {int first = 0}) {
+    final order = shuffledOrder(songs.length, first: first, random: _random);
+    return [for (final index in order) songs[index]];
+  }
+
+  SongModel? _currentSong() {
+    final index = _player.currentIndex;
+    if (index == null || index < 0 || index >= _songs.length) return null;
+    return _songs[index];
+  }
+
+  @override
+  Future<void> setShuffleEnabled(bool enabled) async {
+    if (_shuffle == enabled) return;
+    _shuffle = enabled;
+    if (_songs.isEmpty) {
+      _broadcastState();
+      return;
+    }
+
+    final current = _currentSong();
+    final position = _player.position;
+    final wasPlaying = _player.playing;
+    final baseIndex = current == null
+        ? 0
+        : _baseOrder.indexWhere((song) => song.id == current.id);
+    final start = baseIndex < 0 ? 0 : baseIndex;
+
+    // Reloading the same track would be pointless churn for a queue of one.
+    if (_baseOrder.length <= 1) {
+      _broadcastState();
+      return;
+    }
+
+    await _applyQueue(
+      _shuffle ? _applyShuffle(_baseOrder, first: start) : _baseOrder,
+      _shuffle ? 0 : start,
+      initialPosition: position,
+      autoPlay: wasPlaying,
+    );
+  }
+
+  @override
+  Future<void> reshuffle() async {
+    if (_songs.isEmpty) return;
+    if (!_shuffle) {
+      await setShuffleEnabled(true);
+      return;
+    }
+
+    final current = _currentSong();
+    final position = _player.position;
+    final wasPlaying = _player.playing;
+    final baseIndex = current == null
+        ? 0
+        : _baseOrder.indexWhere((song) => song.id == current.id);
+
+    await _applyQueue(
+      _applyShuffle(_baseOrder, first: baseIndex < 0 ? 0 : baseIndex),
+      0,
+      initialPosition: position,
+      autoPlay: wasPlaying,
+    );
   }
 
   @override
@@ -195,6 +321,15 @@ class LjodAudioHandler extends BaseAudioHandler
     }
   }
 
+  /// Jumps to a queue entry without rebuilding the queue, so the shuffled order
+  /// the listener is looking at stays intact.
+  @override
+  Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= _songs.length) return;
+    await _player.seek(Duration.zero, index: index);
+    if (!_player.playing) await play();
+  }
+
   @override
   Future<void> stop() async {
     await _player.stop();
@@ -214,12 +349,6 @@ class LjodAudioHandler extends BaseAudioHandler
       AudioServiceRepeatMode.all => LoopMode.all,
       _ => LoopMode.off,
     });
-    _broadcastState();
-  }
-
-  @override
-  Future<void> setShuffleEnabled(bool enabled) async {
-    await _player.setShuffleModeEnabled(enabled);
     _broadcastState();
   }
 
@@ -257,7 +386,7 @@ class LjodAudioHandler extends BaseAudioHandler
           LoopMode.all => AudioServiceRepeatMode.all,
           LoopMode.off => AudioServiceRepeatMode.none,
         },
-        shuffleMode: _player.shuffleModeEnabled
+        shuffleMode: _shuffle
             ? AudioServiceShuffleMode.all
             : AudioServiceShuffleMode.none,
       ),

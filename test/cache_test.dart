@@ -40,6 +40,23 @@ void main() {
     expect(temp.listSync(), isEmpty);
   });
 
+  test('a raised raw limit accepts art that is downscaled afterwards', () {
+    // Android caches the original and shrinks it in a follow-up pass; the
+    // default ceiling refused such a cover before the shrink could run, which
+    // is how a tagged track ended up with no artwork at all.
+    final bytes = Uint8List(ArtworkCache.maxFileBytes + 1024);
+    expect(ArtworkCache.storeBytes(temp.path, bytes), isNull);
+
+    final stored = ArtworkCache.storeBytes(
+      temp.path,
+      bytes,
+      maxBytes: ArtworkCache.maxFileBytes * 2,
+    );
+
+    expect(stored, isNotNull);
+    expect(File(stored!).lengthSync(), bytes.length);
+  });
+
   test('prune drops covers the library no longer references', () async {
     final keepBytes = Uint8List.fromList(List.filled(512, 1));
     final staleBytes = Uint8List.fromList(List.filled(512, 2));
@@ -52,24 +69,111 @@ void main() {
     expect(temp.listSync().map((e) => e.path), [keep]);
   });
 
-  test('trim holds the directory under its budget', () async {
-    // 12 files of ~1 MB when the budget is 192 MB: force the budget down by
-    // writing past it with a tiny override of the file set.
+  test('prune does nothing when a scan names no referenced cover', () async {
+    final path = ArtworkCache.storeBytes(
+      temp.path,
+      Uint8List.fromList(List.filled(256, 3)),
+    )!;
+
+    // An extraction failure hands back an empty set. Deleting on that signal
+    // wiped a working cache once, and the notification lost its art with it.
+    expect(await cache.pruneOrphans(const {}), 0);
+    expect(File(path).existsSync(), isTrue);
+  });
+
+  test('storeBytes recreates a deleted cache directory', () {
+    final directory = Directory(p.join(temp.path, 'artwork'));
+    // "Clear artwork cache" deletes the directory, not just its files.
+    expect(directory.existsSync(), isFalse);
+
+    final path = ArtworkCache.storeBytes(
+      directory.path,
+      Uint8List.fromList(List.filled(128, 5)),
+    );
+
+    expect(path, isNotNull);
+    expect(File(path!).existsSync(), isTrue);
+  });
+
+  test('trim leaves the directory alone while it is under budget', () async {
     final files = <String>[];
     for (var i = 0; i < 3; i++) {
-      final bytes = Uint8List.fromList(List.filled(1024, i));
+      final bytes = Uint8List.fromList(List.filled(1024, i + 1));
       files.add(ArtworkCache.storeBytes(temp.path, bytes)!);
       // Backdate so eviction order is deterministic.
       File(files.last)
           .setLastModifiedSync(DateTime.now().subtract(Duration(hours: 3 - i)));
     }
 
-    final total = await cache.usageBytes();
-    expect(total, 3 * 1024);
+    expect(await cache.usageBytes(), 3 * 1024);
 
     // Nothing to evict while under budget.
-    expect(await cache.trim(), 0);
+    expect(await cache.trim(), isEmpty);
     expect(temp.listSync().length, 3);
+  });
+
+  test('trim evicts the oldest covers and reports what it deleted', () async {
+    // The budget is configurable so eviction is reachable without writing the
+    // real 192 MiB ceiling into a test.
+    final limited = ArtworkCache(temp, budgetBytes: 2048);
+    final written = <String>[];
+    for (var i = 0; i < 3; i++) {
+      final bytes = Uint8List.fromList(List.filled(1024, i + 1));
+      written.add(ArtworkCache.storeBytes(temp.path, bytes)!);
+      File(written.last)
+          .setLastModifiedSync(DateTime.now().subtract(Duration(hours: 3 - i)));
+    }
+
+    final removed = await limited.trim();
+
+    // 3 KiB over a 2 KiB budget: exactly the oldest file goes.
+    expect(removed, {written.first});
+    expect(await limited.usageBytes(), lessThanOrEqualTo(2048));
+    expect(File(written.first).existsSync(), isFalse);
+  });
+
+  test('trim never deletes a cover the library still references', () async {
+    // A large library of multi-megabyte covers used to be trimmed back to the
+    // budget right after extraction, and every deleted path was cleared in the
+    // database — so most tracks showed no art no matter how good the scan was.
+    final limited = ArtworkCache(temp, budgetBytes: 1024);
+    final written = <String>[];
+    for (var i = 0; i < 3; i++) {
+      written.add(
+        ArtworkCache.storeBytes(
+          temp.path,
+          Uint8List.fromList(List.filled(1024, 20 + i)),
+        )!,
+      );
+    }
+
+    final removed = await limited.trim(keepPaths: written.toSet());
+
+    expect(removed, isEmpty, reason: 'live covers outrank the byte budget');
+    for (final path in written) {
+      expect(File(path).existsSync(), isTrue);
+    }
+  });
+
+  test('trim drops unreferenced covers before referenced ones', () async {
+    final limited = ArtworkCache(temp, budgetBytes: 1536);
+    final keep = ArtworkCache.storeBytes(
+      temp.path,
+      Uint8List.fromList(List.filled(1024, 11)),
+    )!;
+    final stale = ArtworkCache.storeBytes(
+      temp.path,
+      Uint8List.fromList(List.filled(1024, 12)),
+    )!;
+    File(keep)
+        .setLastModifiedSync(DateTime.now().subtract(const Duration(hours: 2)));
+    File(stale)
+        .setLastModifiedSync(DateTime.now().subtract(const Duration(hours: 1)));
+
+    final removed = await limited.trim(keepPaths: {keep});
+
+    expect(removed, {stale});
+    expect(File(keep).existsSync(), isTrue);
   });
 
   test('clear empties the cache', () async {
@@ -102,7 +206,7 @@ void main() {
     final absent = ArtworkCache(missing);
     expect(await absent.usageBytes(), 0);
     expect(await absent.pruneOrphans({}), 0);
-    expect(await absent.trim(), 0);
+    expect(await absent.trim(), isEmpty);
     await absent.clear();
   });
 }

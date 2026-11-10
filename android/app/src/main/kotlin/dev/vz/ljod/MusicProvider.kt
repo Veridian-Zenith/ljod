@@ -2,10 +2,14 @@ package dev.vz.ljod
 
 import android.content.ContentUris
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.util.Size
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
@@ -122,8 +126,19 @@ class MusicProvider(private val context: Context) {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(context, Uri.parse(uri))
-                val picture = retriever.embeddedPicture ?: continue
-                if (picture.isEmpty() || picture.size > MAX_PICTURE_BYTES) continue
+                // Embedded art first, in whatever format the file carries
+                // (JPEG, PNG, WebP, GIF, BMP); then MediaStore's generated
+                // thumbnail, for libraries that keep covers beside the tracks.
+                var picture = retriever.embeddedPicture ?: thumbnailBytes(uri)
+                if (picture == null || picture.isEmpty() || picture.size > MAX_RAW_BYTES) {
+                    continue
+                }
+                // Re-encode oversized art instead of dropping it: a 3000×3000
+                // cover is routinely 2–6 MiB and used to be discarded, which
+                // made a tagged track look like it had no artwork at all.
+                if (picture.size > MAX_PICTURE_BYTES) {
+                    picture = shrink(picture) ?: continue
+                }
                 val file = File(directory, "$id.img")
                 file.writeBytes(picture)
                 output[id] = file.path
@@ -141,9 +156,87 @@ class MusicProvider(private val context: Context) {
         return output
     }
 
+    /**
+     * Re-encodes [files] at display size and returns source -> new file.
+     *
+     * Tag and sidecar art was cached byte-for-byte, so a library of full-size
+     * PNG covers grew past a gigabyte, while the Dart cache ceiling refused the
+     * largest ones outright. The platform decoder reads every format the tag
+     * reader can hand over (JPEG, PNG, WebP, GIF, BMP), so one pass here makes
+     * the cache small and keeps those covers instead of losing them.
+     */
+    fun shrinkArtwork(
+        targetDir: String,
+        files: List<String>
+    ): Map<String, String> {
+        val output = mutableMapOf<String, String>()
+        val directory = File(targetDir).apply { mkdirs() }
+
+        files.forEachIndexed { index, path ->
+            try {
+                val source = File(path)
+                if (!source.exists() || source.length() == 0L) {
+                    return@forEachIndexed
+                }
+                val shrunk = shrink(source.readBytes()) ?: return@forEachIndexed
+                val file = File(directory, "$index-${System.nanoTime()}.img")
+                file.writeBytes(shrunk)
+                output[path] = file.path
+            } catch (_: Throwable) {
+                // Leave the original cover in place rather than losing it.
+            }
+        }
+
+        return output
+    }
+
+    /** MediaStore's generated art for [uri], or null when there is none. */
+    private fun thumbnailBytes(uri: String): ByteArray? {
+        return try {
+            val bitmap = context.contentResolver.loadThumbnail(
+                Uri.parse(uri),
+                Size(1024, 1024),
+                null
+            )
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, stream)
+            bitmap.recycle()
+            stream.toByteArray()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Re-encodes [bytes] as a JPEG small enough for the Dart cache. */
+    private fun shrink(bytes: ByteArray): ByteArray? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            val longest = maxOf(bounds.outWidth, bounds.outHeight)
+            while (longest / sample > MAX_EDGE_PX) sample *= 2
+
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                ?: return null
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+            bitmap.recycle()
+            stream.toByteArray()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private companion object {
-        /** Matches the Dart cache ceiling; larger covers are not worth keeping. */
-        const val MAX_PICTURE_BYTES = 2 * 1024 * 1024
+        /** Matches the Dart cache ceiling: art above this is downscaled first. */
+        const val MAX_PICTURE_BYTES = 4 * 1024 * 1024
+
+        /** Coarse guard against a pathological tag; the ceiling above is the real one. */
+        const val MAX_RAW_BYTES = 32 * 1024 * 1024
+
+        /** Longest edge kept when re-encoding a large cover. */
+        const val MAX_EDGE_PX = 1024
     }
 
     data class AudioFile(

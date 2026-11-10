@@ -12,20 +12,35 @@ import 'package:path_provider/path_provider.dart';
 ///   shares one cover instead of storing the same image thousands of times;
 /// * a single cover larger than [maxFileBytes] is skipped rather than written
 ///   (huge scans are almost always uncompressed art nobody needs at full size);
-/// * the whole directory is held under [budgetBytes] by evicting least
-///   recently used files, preferring ones no longer referenced by the library.
+/// * the whole directory is held under [defaultBudgetBytes] by evicting least
+///   recently used files, but only ones no longer referenced by the library —
+///   deleting a referenced cover is how working artwork disappeared.
 class ArtworkCache {
-  ArtworkCache(this.directory);
+  ArtworkCache(this.directory, {this.budgetBytes = defaultBudgetBytes});
 
-  /// Hard ceiling for cached artwork.
-  static const int budgetBytes = 192 * 1024 * 1024;
+  /// Budget for artwork nothing references any more.
+  ///
+  /// Referenced covers are exempt: the scan extracts them from files that were
+  /// already read once, and deleting one means the library shows no art for it
+  /// until another full scan.
+  static const int defaultBudgetBytes = 192 * 1024 * 1024;
 
   /// Largest single cover kept on disk.
-  static const int maxFileBytes = 2 * 1024 * 1024;
+  ///
+  /// This used to be 2 MiB, which silently dropped a large share of real
+  /// album art: a 3000×3000 JPEG is routinely 2–6 MiB, so an entire library
+  /// could report "no cover" for tracks that have a perfect one embedded. The
+  /// Android extractor downscales anything bigger than this before it reaches
+  /// the cache.
+  static const int maxFileBytes = 4 * 1024 * 1024;
 
   static const String extension = '.img';
 
   final Directory directory;
+
+  /// Ceiling for this cache. Pluggable so a test can exercise eviction without
+  /// writing hundreds of megabytes.
+  final int budgetBytes;
 
   /// Opens (and creates) the artwork cache under app support storage.
   static Future<ArtworkCache> open() async {
@@ -42,9 +57,23 @@ class ArtworkCache {
   /// Static and synchronous so the scan isolate can call it without a channel
   /// round-trip. Returns `null` when the image is too large or cannot be
   /// written; artwork is decoration, so failures are silent.
-  static String? storeBytes(String directoryPath, Uint8List bytes) {
-    if (bytes.isEmpty || bytes.length > maxFileBytes) return null;
+  ///
+  /// [maxBytes] exists for the Android pipeline, which accepts a cover at its
+  /// original size and downscales it in a follow-up pass. The default applies
+  /// to anything cached without that pass.
+  static String? storeBytes(
+    String directoryPath,
+    Uint8List bytes, {
+    int maxBytes = maxFileBytes,
+  }) {
+    if (bytes.isEmpty || bytes.length > maxBytes) return null;
     try {
+      // The cache directory can be deleted underneath us ("Clear artwork
+      // cache", "Clear library cache"), and a missing directory made every
+      // write fail silently — the cover was dropped and nothing ever brought
+      // it back. Create it on demand instead.
+      final directory = Directory(directoryPath);
+      if (!directory.existsSync()) directory.createSync(recursive: true);
       final file = File(
         p.join(directoryPath, '${_contentKey(bytes)}$extension'),
       );
@@ -95,6 +124,12 @@ class ArtworkCache {
   /// scheme.
   Future<int> pruneOrphans(Set<String> keepPaths) async {
     var removed = 0;
+    // An empty keep set means the scan could not name a single referenced
+    // cover — an extraction failure, not an empty library. Deleting everything
+    // in that case threw away covers the database still points at, and the
+    // notification lost its art too. The budget trim still bounds the
+    // directory.
+    if (keepPaths.isEmpty) return 0;
     try {
       if (!await directory.exists()) return 0;
       await for (final entity in directory.list(followLinks: false)) {
@@ -113,12 +148,20 @@ class ArtworkCache {
     return removed;
   }
 
-  /// Evicts least recently used files until the directory fits [budgetBytes].
+  /// Evicts least recently used *unreferenced* files until the directory fits
+  /// [budgetBytes].
   ///
-  /// Files not in [keepPaths] go first; referenced covers are only evicted when
-  /// the directory still exceeds the budget afterwards.
-  Future<int> trim({Set<String> keepPaths = const {}}) async {
-    if (!await directory.exists()) return 0;
+  /// Files in [keepPaths] are never deleted. Evicting them used to make a
+  /// working library look broken: a scan extracted hundreds of covers, this
+  /// method trimmed the directory to its budget, and the database had to forget
+  /// every path it deleted — so most tracks ended up without artwork, and the
+  /// next scan evicted a different subset. With multi-megabyte album art the
+  /// budget held only a few dozen covers.
+  ///
+  /// Returns the paths that were deleted, so the database can forget any row
+  /// that still referenced them.
+  Future<Set<String>> trim({Set<String> keepPaths = const {}}) async {
+    if (!await directory.exists()) return const <String>{};
 
     final entries = <({File file, int length, DateTime modified, bool keep})>[];
     try {
@@ -137,25 +180,28 @@ class ArtworkCache {
         }
       }
     } catch (_) {
-      return 0;
+      return const <String>{};
     }
 
     var total = entries.fold<int>(0, (sum, entry) => sum + entry.length);
-    if (total <= budgetBytes) return 0;
+    if (total <= budgetBytes) return const <String>{};
 
-    // Unreferenced first (oldest of those), then referenced if still over.
+    // Oldest unreferenced file first; anything the library references is kept.
     entries.sort((a, b) {
       if (a.keep != b.keep) return a.keep ? 1 : -1;
       return a.modified.compareTo(b.modified);
     });
 
-    var removed = 0;
+    final removed = <String>{};
     for (final entry in entries) {
       if (total <= budgetBytes) break;
+      // Sorted unreferenced-first, but never trade a live cover for the budget:
+      // the file cannot be recreated without re-reading its audio file.
+      if (entry.keep) continue;
       try {
         await entry.file.delete();
         total -= entry.length;
-        removed++;
+        removed.add(entry.file.path);
       } catch (_) {
         // Best effort.
       }

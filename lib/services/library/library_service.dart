@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,7 @@ import '../../core/models/folder_scope.dart';
 import '../../core/models/song_model.dart';
 import '../../core/utils/formatters.dart';
 import 'artwork_cache.dart';
+import 'sidecar_artwork.dart';
 
 class LibraryPermissionException implements Exception {
   const LibraryPermissionException();
@@ -61,6 +63,21 @@ class AudioFolder {
   String get parent => p.dirname(path);
 }
 
+/// Outcome of a library scan.
+class LibraryScan {
+  const LibraryScan({
+    required this.songs,
+    this.evictedArtwork = const <String>{},
+  });
+
+  final List<SongModel> songs;
+
+  /// Cover files the cache had to evict to stay inside its budget. [songs] may
+  /// still reference them, so the database has to forget those paths before the
+  /// library is reloaded.
+  final Set<String> evictedArtwork;
+}
+
 /// Reads the device music library.
 ///
 /// Android uses a thin MediaStore bridge so the scan respects scoped storage.
@@ -71,6 +88,21 @@ class LibraryService {
   static const MethodChannel _channel = MethodChannel('dev.vz.ljod/media');
   static const int _enrichBatchSize = 48;
   static const int _artworkBatchSize = 24;
+
+  /// Raw covers accepted before the downscaling pass on Android.
+  ///
+  /// A 3000×3000 PNG cover is routinely 6–12 MiB. The cache ceiling used to
+  /// apply to the raw bytes, so such a cover was refused outright and the track
+  /// looked untagged — 680 of 1744 tracks in one library. The platform decoder
+  /// re-encodes whatever arrives here, so only the pathological case is capped.
+  static const int _maxRawArtworkBytes = 24 * 1024 * 1024;
+
+  /// Size above which reused art is downscaled during a scan.
+  ///
+  /// Covers written before downscaling existed are still full size; they are
+  /// converted on the next scan, while covers already at display size are left
+  /// alone so a scan does not decode the whole cache.
+  static const int _reshrinkAboveBytes = 700 * 1024;
 
   bool get isAndroid => !kIsWeb && Platform.isAndroid;
 
@@ -93,8 +125,9 @@ class LibraryService {
   /// Scan the device and return playable tracks.
   ///
   /// [scope] decides which folders are read. [onProgress] is called after each
-  /// metadata batch so the UI can show real progress instead of a spinner.
-  Future<List<SongModel>> scan({
+  /// metadata batch so the UI can show real progress instead of a spinner. The
+  /// result also names any cached covers eviction had to remove.
+  Future<LibraryScan> scan({
     FolderScope scope = const FolderScope(),
     void Function(int processed, int total)? onProgress,
     Map<String, String> knownArtwork = const {},
@@ -112,7 +145,7 @@ class LibraryService {
 
     if (raw.isEmpty) {
       onProgress?.call(0, 0);
-      return const [];
+      return const LibraryScan(songs: []);
     }
 
     final support = await getApplicationSupportDirectory();
@@ -122,6 +155,9 @@ class LibraryService {
     }
 
     final enriched = <Map<String, Object?>>[];
+    // Pre-downscale cover path -> cached path, shared by every batch so a
+    // reused album cover is decoded once and later batches reuse the mapping.
+    final replacements = <String, String>{};
     for (var start = 0; start < raw.length; start += _enrichBatchSize) {
       final end = min(start + _enrichBatchSize, raw.length);
       final batch = raw.sublist(start, end);
@@ -136,8 +172,14 @@ class LibraryService {
         'tracks': batch,
         'artworkDirectory': artworkDirectory.path,
         'knownArtwork': batchArtwork,
+        'maxRawBytes': isAndroid
+            ? _maxRawArtworkBytes
+            : ArtworkCache.maxFileBytes,
       });
       enriched.addAll(result);
+      if (isAndroid) {
+        await _shrinkArtwork(result, artworkDirectory, replacements);
+      }
       onProgress?.call(enriched.length, raw.length);
     }
 
@@ -147,6 +189,9 @@ class LibraryService {
     // isolate could not produce before giving up on it.
     if (isAndroid) {
       await _recoverAndroidArtwork(enriched, artworkDirectory);
+      // Recovered pictures arrive at full size too, so they take the same
+      // downscaling path as tag and sidecar art.
+      await _shrinkArtwork(enriched, artworkDirectory, replacements);
     }
 
     final seen = <String>{};
@@ -194,15 +239,66 @@ class LibraryService {
 
     // Keep the cache honest: drop covers for tracks that are gone, then hold
     // the directory under its byte budget. Both are best-effort.
-    final keepArtwork = {
+    //
+    // Covers the database still references are kept even when this scan could
+    // not reproduce a path for them: a scan that fails to read tags must not
+    // delete art the library continues to point at.
+    final keepArtwork = <String>{
       for (final song in songs)
-        if (song.artworkPath != null) song.artworkPath!,
+        if (_clean(song.artworkPath) != null) song.artworkPath!,
+      // Superseded originals are deliberately left out: they are the full-size
+      // covers the downscaling pass replaced, and keeping them here would hold
+      // a gigabyte of files nothing points at.
+      for (final path in knownArtwork.values)
+        if (path.isNotEmpty && !replacements.containsKey(path)) path,
     };
     final cache = ArtworkCache(artworkDirectory);
     await cache.pruneOrphans(keepArtwork);
-    await cache.trim(keepPaths: keepArtwork);
+    final evicted = <String>{...await cache.trim(keepPaths: keepArtwork)};
 
-    return songs;
+    // One line that answers "why is there no artwork?" precisely, and only
+    // counts covers whose file is still on disk. Counting paths alone made this
+    // line report numbers the library never showed: a path whose file had been
+    // trimmed, cleared or deleted outside the app still counted as "covered".
+    final sources = <String, String>{
+      for (final item in enriched)
+        if (item['artworkSource'] is String)
+          (item['id'] as String? ?? ''): item['artworkSource'] as String,
+    };
+    final bySource = <String, int>{};
+    for (final song in songs) {
+      final path = _clean(song.artworkPath);
+      if (path == null) {
+        bySource.update('none', (count) => count + 1, ifAbsent: () => 1);
+        continue;
+      }
+      if (!File(path).existsSync()) {
+        // Forget the dead path instead of claiming a cover the app cannot paint.
+        evicted.add(path);
+        bySource.update('missing', (count) => count + 1, ifAbsent: () => 1);
+        continue;
+      }
+      bySource.update(
+        sources[song.id] ?? 'cached',
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+    final covered =
+        songs.length - (bySource['none'] ?? 0) - (bySource['missing'] ?? 0);
+    final missing = bySource['missing'] ?? 0;
+    DiagnosticsLog.instance.log(
+      'artwork: $covered of ${songs.length} tracks have a cover '
+      '(embedded ${bySource['embedded'] ?? 0}, sidecar ${bySource['sidecar'] ?? 0}, '
+      'platform ${bySource['platform'] ?? 0}, reused ${bySource['reused'] ?? 0})'
+      '${missing == 0 ? '' : ', $missing cached file(s) missing'}'
+      '${replacements.isEmpty ? '' : ', ${replacements.length} downscaled'}',
+      level: songs.isNotEmpty && covered == 0
+          ? DiagnosticsLevel.warning
+          : DiagnosticsLevel.info,
+    );
+
+    return LibraryScan(songs: songs, evictedArtwork: evicted);
   }
 
   /// Fills in covers that the in-isolate tag reader could not produce.
@@ -225,6 +321,7 @@ class LibraryService {
     final staging = Directory(
       p.join(artworkDirectory.parent.path, 'artwork-staging'),
     );
+    var recovered = 0;
     try {
       if (!await staging.exists()) await staging.create(recursive: true);
       for (var start = 0; start < missing.length; start += _artworkBatchSize) {
@@ -245,7 +342,13 @@ class LibraryService {
         } on MissingPluginException {
           // A build without the method: nothing to recover, and the scan goes on.
           return;
-        } on PlatformException {
+        } on PlatformException catch (error) {
+          // Silence here is why "no artwork at all" was undiagnosable: the
+          // platform bridge failed and nothing in the trail said so.
+          DiagnosticsLog.instance.log(
+            'artwork: platform extraction failed: ${error.message}',
+            level: DiagnosticsLevel.warning,
+          );
           return;
         }
         if (produced == null || produced.isEmpty) continue;
@@ -258,8 +361,13 @@ class LibraryService {
             final written = ArtworkCache.storeBytes(
               artworkDirectory.path,
               await file.readAsBytes(),
+              maxBytes: _maxRawArtworkBytes,
             );
-            if (written != null) item['artworkPath'] = written;
+            if (written != null) {
+              item['artworkPath'] = written;
+              item['artworkSource'] = 'platform';
+              recovered++;
+            }
           } catch (_) {
             // Unreadable staged image; leave this track without a cover.
           } finally {
@@ -281,15 +389,113 @@ class LibraryService {
       }
     }
 
-    final stillMissing = enriched
-        .where((item) => _clean(item['artworkPath']) == null)
-        .length;
-    if (stillMissing > 0) {
+    // Zero successes for tracks that need a cover is the signal that the
+    // platform bridge (not the files) is the problem. Silence here is why a
+    // scan could report a thousand missing covers with no explanation.
+    if (recovered == 0) {
       DiagnosticsLog.instance.log(
-        'artwork: $stillMissing of ${enriched.length} tracks have no cover '
-        '(no embedded picture, or the file could not be read)',
+        'artwork: platform extraction produced nothing for '
+        '${missing.length} track(s)',
         level: DiagnosticsLevel.warning,
       );
+    }
+  }
+
+  /// Downscales cached covers to a phone-friendly size.
+  ///
+  /// Tag and sidecar art used to be stored byte-for-byte: 1064 covers came to
+  /// 1.46 GB, and anything above [ArtworkCache.maxFileBytes] was refused before
+  /// it was cached. Sending the bytes through the platform decoder fixes both —
+  /// the result is a 1024 px JPEG that is a fraction of the size and well
+  /// inside the cache ceiling.
+  ///
+  /// [replacements] maps a pre-shrink path to its cached replacement and is
+  /// shared across the scan, so an artwork shared by an album is decoded once.
+  Future<void> _shrinkArtwork(
+    List<Map<String, Object?>> items,
+    Directory artworkDirectory,
+    Map<String, String> replacements,
+  ) async {
+    // A later batch can hold the pre-shrink path of art an earlier batch
+    // already converted; remap those instead of decoding them again.
+    for (final item in items) {
+      final path = _clean(item['artworkPath']);
+      if (path == null) continue;
+      final replaced = replacements[path];
+      if (replaced != null) item['artworkPath'] = replaced;
+    }
+
+    final candidates = <String>{};
+    for (final item in items) {
+      final path = _clean(item['artworkPath']);
+      if (path == null) continue;
+      if (replacements.containsValue(path)) continue;
+      // Reused covers are only worth re-encoding while they are still large;
+      // otherwise every scan would decode the entire cache again.
+      if (item['artworkSource'] == 'reused') {
+        try {
+          if (await File(path).length() <= _reshrinkAboveBytes) continue;
+        } catch (_) {
+          continue;
+        }
+      }
+      candidates.add(path);
+    }
+    if (candidates.isEmpty) return;
+
+    final staging = Directory(
+      p.join(artworkDirectory.parent.path, 'artwork-shrink'),
+    );
+    try {
+      if (!await staging.exists()) await staging.create(recursive: true);
+      final Map<String, String>? produced;
+      try {
+        produced = await _channel.invokeMapMethod<String, String>(
+          'shrinkArtwork',
+          {'dir': staging.path, 'files': candidates.toList()},
+        );
+      } on MissingPluginException {
+        // A build without the method keeps the covers it already has.
+        return;
+      } on PlatformException catch (error) {
+        DiagnosticsLog.instance.log(
+          'artwork: downscaling failed: ${error.message}',
+          level: DiagnosticsLevel.warning,
+        );
+        return;
+      }
+      if (produced == null || produced.isEmpty) return;
+
+      for (final entry in produced.entries) {
+        final file = File(entry.value);
+        try {
+          final written = ArtworkCache.storeBytes(
+            artworkDirectory.path,
+            await file.readAsBytes(),
+          );
+          if (written != null) replacements[entry.key] = written;
+        } catch (_) {
+          // Unreadable output; the original cover stays in place.
+        } finally {
+          try {
+            if (await file.exists()) await file.delete();
+          } catch (_) {
+            // Staging is disposable.
+          }
+        }
+      }
+
+      for (final item in items) {
+        final path = _clean(item['artworkPath']);
+        final replacement = path == null ? null : replacements[path];
+        if (replacement != null) item['artworkPath'] = replacement;
+      }
+    } finally {
+      try {
+        if (await staging.exists()) await staging.delete(recursive: true);
+      } catch (_) {
+        // Best effort.
+      }
     }
   }
 
@@ -446,7 +652,13 @@ class LibraryService {
 List<Map<String, Object?>> _enrichTracks(Map<String, Object?> request) {
   final tracks = (request['tracks'] as List?) ?? const [];
   final artworkDirectory = request['artworkDirectory'] as String?;
+  final maxRawBytes =
+      (request['maxRawBytes'] as num?)?.toInt() ?? ArtworkCache.maxFileBytes;
   final output = <Map<String, Object?>>[];
+  // Per-folder image listings and per-cover bytes: an album of 20 tracks must
+  // read its `folder.jpg` once, not twenty times.
+  final imagesCache = <String, Map<String, File>>{};
+  final sidecarBytes = <String, Uint8List?>{};
 
   for (final entry in tracks) {
     if (entry is! Map) continue;
@@ -464,7 +676,10 @@ List<Map<String, Object?>> _enrichTracks(Map<String, Object?> request) {
     // Reuse previously extracted art when the file still exists, so rescans do
     // not re-read every cover from every file.
     final hasArtwork = known is String && File(known).existsSync();
-    if (hasArtwork) result['artworkPath'] = known;
+    if (hasArtwork) {
+      result['artworkPath'] = known;
+      result['artworkSource'] = 'reused';
+    }
 
     // Scoped storage may hand back a content:// URI with no file path. Keep the
     // MediaStore metadata so the track is still playable; just skip tag reads.
@@ -474,8 +689,12 @@ List<Map<String, Object?>> _enrichTracks(Map<String, Object?> request) {
       continue;
     }
 
+    // Pictures the tag reader decoded, kept outside the try so a malformed tag
+    // block does not also cost the track its sidecar cover.
+    var pictures = const <Picture>[];
     try {
       final metadata = readMetadata(file, getImage: !hasArtwork);
+      pictures = metadata.pictures;
       result['title'] = _preferred(metadata.title, track['title']);
       result['artist'] = _preferred(metadata.artist, track['artist']);
       result['album'] = _preferred(metadata.album, track['album']);
@@ -486,21 +705,50 @@ List<Map<String, Object?>> _enrichTracks(Map<String, Object?> request) {
       result['trackNumber'] = metadata.trackNumber ?? track['trackNumber'];
       final duration = metadata.duration?.inMilliseconds ?? 0;
       if (duration > 0) result['durationMs'] = duration;
-
-      if (!hasArtwork &&
-          artworkDirectory != null &&
-          metadata.pictures.isNotEmpty) {
-        final picture = _bestPicture(metadata.pictures);
-        if (picture != null) {
-          final written = ArtworkCache.storeBytes(
-            artworkDirectory,
-            picture.bytes,
-          );
-          if (written != null) result['artworkPath'] = written;
-        }
-      }
     } catch (_) {
       // Tag reading is best-effort; MediaStore metadata still stands.
+    }
+
+    if (!hasArtwork && artworkDirectory != null) {
+      // Embedded art is not the only layout: many libraries keep one
+      // `cover.jpg` / `folder.jpg` beside the tracks, or name a picture after
+      // the track, in JPEG, PNG, WebP, GIF or BMP. Without this fallback such a
+      // library showed no covers at all.
+      var source = 'embedded';
+      Uint8List? bytes = pictures.isEmpty
+          ? null
+          : _bestPicture(pictures)?.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        source = 'sidecar';
+        bytes = null;
+        final images = imagesCache.putIfAbsent(
+          file.parent.path,
+          () => folderImages(file.parent),
+        );
+        final sidecar = pickSidecarArtwork(file, images);
+        if (sidecar != null) {
+          bytes = sidecarBytes.putIfAbsent(sidecar.path, () {
+            try {
+              return sidecar.readAsBytesSync();
+            } catch (_) {
+              // Unreadable image; treat as no cover.
+              return null;
+            }
+          });
+        }
+      }
+
+      if (bytes != null && bytes.isNotEmpty) {
+        final written = ArtworkCache.storeBytes(
+          artworkDirectory,
+          bytes,
+          maxBytes: maxRawBytes,
+        );
+        if (written != null) {
+          result['artworkPath'] = written;
+          result['artworkSource'] = source;
+        }
+      }
     }
 
     output.add(result);

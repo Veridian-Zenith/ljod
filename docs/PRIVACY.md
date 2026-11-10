@@ -9,10 +9,10 @@ device unless you explicitly turn on lyrics lookup.
 | Data | Location | Notes |
 | --- | --- | --- |
 | Library index, favourites, play counts | `ljod_library.db` (app documents) | rebuildable cache |
-| Extracted cover art | `<app support>/artwork/` | one file per track, ≤ 2 MiB each |
+| Extracted cover art | `<app support>/artwork/` | one file per unique picture, downscaled to a 1024 px JPEG on Android |
 | Cached lyrics | `<app support>/lyrics/` | includes "no lyrics" answers |
 | Settings | `SharedPreferences` | motion, lyrics lookup, folder rules, sorting |
-| Diagnostics | `<app support>/diagnostics.log` | capped at 128 KiB |
+| Diagnostics | `<app support>/diagnostics-2.log` | capped at 128 KiB |
 
 All of it is inside the app's private storage. Uninstalling the app removes it.
 "Clear library cache", "Clear lyrics cache" and "Clear artwork cache" in Settings

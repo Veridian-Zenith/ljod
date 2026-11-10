@@ -1,6 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/app_database.dart';
+import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/song_model.dart';
 import '../settings/settings_provider.dart';
 import 'library_service.dart';
@@ -102,16 +106,69 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
   AppDatabase get _db => AppDatabase.instance;
   LibraryService get _service => ref.read(libraryServiceProvider);
 
+  /// Latest state published while [build] was still reading the database.
+  ///
+  /// Setup starts its scan as soon as this notifier exists, so the scan can
+  /// finish before the initial `allSongs()` read returns. Returning that read
+  /// then overwrote the finished scan with the pre-scan (empty) rows — the
+  /// library looked empty and the person had to scan a second time for no
+  /// reason. The newer state wins here.
+  LibraryState? _published;
+
   @override
   Future<LibraryState> build() async {
     // Startup must never block on permission prompts or background scanning.
     // The setup flow (or an explicit Rescan) owns the first scan.
-    return LibraryState(songs: await _db.allSongs());
+    final songs = await _db.allSongs();
+
+    // A stored path can outlive its file: the artwork directory may be removed
+    // outside the app, and `upsertSongs` keeps the old path with COALESCE when a
+    // scan produces no art for a track. Nothing checked those paths, so the
+    // library rendered rows pointing at files that were gone and every tile
+    // logged a decode failure — artwork looked permanently broken even though
+    // the files it came from were fine. One stat per row here, then the dead
+    // paths are forgotten and a scan re-extracts them.
+    final dead = <String>{};
+    final verified = <SongModel>[];
+    for (final song in songs) {
+      final path = song.artworkPath;
+      if (path == null || path.isEmpty || File(path).existsSync()) {
+        verified.add(song);
+        continue;
+      }
+      dead.add(path);
+      verified.add(song.copyWith(clearArtwork: true));
+    }
+    if (dead.isNotEmpty) {
+      unawaited(_repairMissingArtwork(dead));
+    }
+    return _published ?? LibraryState(songs: verified);
+  }
+
+  /// Forgets artwork paths whose files are gone, then re-extracts the covers.
+  ///
+  /// Running the scan keeps this self-healing: the row is now empty, so the
+  /// scan finds no path to reuse and reads the art again. It asks for no
+  /// permission — a startup repair must never pop a dialog — and does nothing
+  /// when music access is missing or a scan is already underway.
+  Future<void> _repairMissingArtwork(Set<String> dead) async {
+    DiagnosticsLog.instance.log(
+      'artwork: ${dead.length} cached cover(s) were missing; re-extracting',
+      level: DiagnosticsLevel.warning,
+    );
+    try {
+      await _db.clearArtworkPathsFor(dead);
+    } catch (_) {
+      // The library still renders with the paths stripped in memory.
+    }
+    if (!ref.mounted || _current.isScanning) return;
+    await rescan(requestPermission: false);
   }
 
   LibraryState get _current => state.value ?? const LibraryState();
 
   void _publish(LibraryState next) {
+    _published = next;
     if (!ref.mounted) return;
     state = AsyncData(next);
   }
@@ -149,6 +206,18 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
       _publish(_current.copyWith(scanPhase: ScanPhase.querying));
       final scope = ref.read(settingsProvider).folderScope;
       final knownArtwork = await _db.artworkPaths();
+      // Drop paths whose files are gone before the scan, not just when reusing
+      // them: `upsertSongs` preserves an existing path when a scan finds no
+      // artwork (COALESCE), so a dead path would otherwise survive every scan.
+      final deadKnown = <String>{};
+      knownArtwork.removeWhere((id, path) {
+        if (File(path).existsSync()) return false;
+        deadKnown.add(path);
+        return true;
+      });
+      if (deadKnown.isNotEmpty) {
+        await _db.clearArtworkPathsFor(deadKnown);
+      }
       final scanned = await _service.scan(
         scope: scope,
         knownArtwork: knownArtwork,
@@ -165,10 +234,23 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
       );
 
       _publish(_current.copyWith(scanPhase: ScanPhase.saving));
-      await _db.upsertSongs(scanned);
-      if (scanned.isNotEmpty) {
-        await _db.removeMissing(scanned.map((song) => song.id).toSet());
+      await _db.upsertSongs(scanned.songs);
+      // An empty result only means "the device has no music" when the library
+      // was already empty. With tracks indexed it means the platform query came
+      // back empty — permission revoked mid-scan, storage not mounted, or a
+      // failed bridge call — and pruning then deleted every row, so the library
+      // looked empty and had to be scanned again. Keep the rows in that case.
+      if (scanned.songs.isEmpty && _current.songs.isNotEmpty) {
+        DiagnosticsLog.instance.log(
+          'scan: the device returned no tracks; keeping the existing library',
+          level: DiagnosticsLevel.warning,
+        );
+      } else {
+        await _db.removeMissing(scanned.songs.map((song) => song.id).toSet());
       }
+      // Covers the artwork budget had to evict are no longer on disk, so forget
+      // their paths instead of leaving rows that point at nothing.
+      await _db.clearArtworkPathsFor(scanned.evictedArtwork);
       final songs = await _db.allSongs();
       _publish(
         LibraryState(
@@ -176,8 +258,8 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
           isScanning: false,
           lastScan: DateTime.now(),
           scanPhase: ScanPhase.done,
-          scanProcessed: scanned.length,
-          scanTotal: scanned.length,
+          scanProcessed: scanned.songs.length,
+          scanTotal: scanned.songs.length,
         ),
       );
     } on LibraryPermissionException {
@@ -259,7 +341,7 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
     state = AsyncData(
       _current.copyWith(
         songs: _current.songs
-            .map((song) => song.copyWith(artworkPath: ''))
+            .map((song) => song.copyWith(clearArtwork: true))
             .toList(growable: false),
       ),
     );

@@ -176,6 +176,13 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
   void _startScan() {
     if (_scanStarted) return;
     _scanStarted = true;
+    // A populated library means there is nothing to index: setup is being
+    // replayed, or a scan already finished. Scanning again re-reads every tag
+    // for no gain and raced the finished state away in the first run.
+    final library = ref.read(libraryProvider).value;
+    if (library != null && library.songs.isNotEmpty && !library.isScanning) {
+      return;
+    }
     ref
         .read(libraryProvider.notifier)
         .rescan(requestPermission: _accessGranted == true);

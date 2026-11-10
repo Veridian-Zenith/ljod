@@ -2,7 +2,9 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ljod/core/models/song_model.dart';
+import 'package:ljod/core/theme/ljod_theme.dart';
 import 'package:ljod/core/utils/formatters.dart';
+import 'package:ljod/core/widgets/vz_components.dart';
 import 'package:ljod/features/settings/settings_screen.dart';
 import 'package:ljod/main.dart';
 import 'package:ljod/services/audio/audio_providers.dart';
@@ -23,29 +25,107 @@ void main() {
     expect(formatDuration(Duration.zero), '--:--');
   });
 
-  test(
-    'online lyrics lookup is on by default and stays off once switched',
-    () async {
-      SharedPreferences.setMockInitialValues({});
-      final preferences = await SharedPreferences.getInstance();
-      final container = ProviderContainer(
-        overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-      );
-      addTearDown(container.dispose);
+  test('online lyrics lookup is off by default and stays on once switched', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final container = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+    );
+    addTearDown(container.dispose);
 
-      expect(container.read(settingsProvider).lyricsLookup, isTrue);
+    // The only outbound request in the app is an explicit opt-in: this is what
+    // docs/PRIVACY.md and the in-app copy promise.
+    expect(container.read(settingsProvider).lyricsLookup, isFalse);
 
-      await container.read(settingsProvider.notifier).setLyricsLookup(false);
-      expect(container.read(settingsProvider).lyricsLookup, isFalse);
+    await container.read(settingsProvider.notifier).setLyricsLookup(true);
+    expect(container.read(settingsProvider).lyricsLookup, isTrue);
 
-      // The choice has to survive a restart, or the toggle is decorative.
-      final reopened = ProviderContainer(
-        overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-      );
-      addTearDown(reopened.dispose);
-      expect(reopened.read(settingsProvider).lyricsLookup, isFalse);
-    },
-  );
+    // The choice has to survive a restart, or the toggle is decorative.
+    final reopened = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+    );
+    addTearDown(reopened.dispose);
+    expect(reopened.read(settingsProvider).lyricsLookup, isTrue);
+  });
+
+  testWidgets('album tiles draw initials when there is no artwork', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    // AlbumTile hands CoverArt an unbounded size. Without a finite fallback the
+    // initials were laid out at an infinite font size and never painted.
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LjodTheme.build(),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 138,
+              height: 186,
+              child: AlbumTile(
+                title: 'Forge',
+                subtitle: 'Veridian Zenith',
+                artworkPath: null,
+                onTap: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('F'), findsOneWidget);
+  });
+
+  testWidgets('a rail of album tiles lays out without artwork', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    // The home rail is exactly this shape: several AlbumTiles side by side,
+    // each handing CoverArt an infinite size inside a fixed-width box. When that
+    // infinite size reached the initials' font size, every tile in the rail
+    // failed to lay out at once — the diagnostics trail showed five
+    // "RenderBox was not laid out: RenderParagraph" errors paired with
+    // "Unsupported operation: Infinity or NaN toInt".
+    const titles = ['Amber', 'Ember', 'Forge', 'Frost', 'Vesper'];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LjodTheme.build(),
+        home: Scaffold(
+          body: SizedBox(
+            height: 220,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final title in titles)
+                  SizedBox(
+                    width: 138,
+                    child: AlbumTile(
+                      title: title,
+                      subtitle: 'Veridian Zenith',
+                      artworkPath: null,
+                      onTap: () {},
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(AlbumTile), findsNWidgets(titles.length));
+    expect(find.text('A'), findsOneWidget);
+    expect(find.text('V'), findsOneWidget);
+  });
 
   testWidgets('LjodApp renders the shell and navigation', (tester) async {
     await _pumpApp(tester);
@@ -235,15 +315,25 @@ class _SilentAudioHandler extends BaseAudioHandler
   List<SongModel> get songs => const [];
 
   @override
+  List<SongModel> get baseSongs => songs;
+
+  @override
+  bool get shuffleEnabled => false;
+
+  @override
   Future<void> loadQueue(
     List<SongModel> songs, {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
+    bool? shuffle,
   }) async {}
 
   @override
   Future<void> setShuffleEnabled(bool enabled) async {}
+
+  @override
+  Future<void> reshuffle() async {}
 
   @override
   Future<void> setVolume(double volume) async {}

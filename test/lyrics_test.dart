@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ljod/core/models/song_model.dart';
 import 'package:ljod/features/player/lyrics_sheet.dart';
 import 'package:ljod/services/audio/audio_providers.dart';
+import 'package:ljod/services/library/library_providers.dart';
 import 'package:ljod/services/lyrics/lyrics_service.dart';
 import 'package:ljod/services/settings/settings_provider.dart';
 import 'package:material_ui/material_ui.dart';
@@ -34,6 +35,18 @@ SongModel _song({
 const _lrc = '[00:01.00]First line\n[00:04.50]Second line';
 
 Lyrics _lyrics({String text = _lrc}) => Lyrics.parse(text, source: 'LRCLIB')!;
+
+/// Library contents a test can replace without a database behind them.
+class _SongsNotifier extends Notifier<List<SongModel>> {
+  @override
+  List<SongModel> build() => const [];
+
+  void replace(List<SongModel> songs) => state = songs;
+}
+
+final _songsStateProvider = NotifierProvider<_SongsNotifier, List<SongModel>>(
+  _SongsNotifier.new,
+);
 
 class _FakeRemote implements LyricsRemote {
   _FakeRemote(this.respond);
@@ -78,6 +91,64 @@ void main() {
     expect(second.hasLyrics, isTrue);
     expect(second.cached, isTrue);
     expect(second.lyrics!.lines.length, 2);
+  });
+
+  test('the cache directory is recreated after it is cleared', () async {
+    final remote = _FakeRemote((_) => RemoteLyricsHit(_lyrics()));
+    final loader = service(remote);
+
+    await loader.load(_song(id: 'a'), allowOnline: true);
+    final lyricsDir = Directory('${temp.path}/lyrics');
+    expect(lyricsDir.existsSync(), isTrue);
+
+    // What "Clear library cache" does: the directory disappears wholesale while
+    // the service keeps its handle on it.
+    lyricsDir.deleteSync(recursive: true);
+
+    final second = await loader.load(
+      _song(id: 'b', title: 'Second'),
+      allowOnline: true,
+    );
+
+    expect(second.hasLyrics, isTrue);
+    expect(
+      lyricsDir.listSync(),
+      isNotEmpty,
+      reason:
+          'a deleted cache directory must not disable caching for the session',
+    );
+  });
+
+  test('play counts and favourites do not rebuild the lyrics request', () {
+    final song = _song();
+    final container = ProviderContainer(
+      overrides: [
+        songsProvider.overrideWith((ref) => ref.watch(_songsStateProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    container.read(_songsStateProvider.notifier).replace([song]);
+
+    var rebuilds = 0;
+    final subscription = container.listen(
+      lyricsSubjectProvider(song.id),
+      (_, _) => rebuilds++,
+    );
+    addTearDown(subscription.close);
+
+    // The provider used to watch the whole song, so a play counter bump or a
+    // favourite toggle re-ran the lookup — and a result that was never cached
+    // was retried against the network every time.
+    container.read(_songsStateProvider.notifier).replace([
+      song.copyWith(playCount: 3, isFavorite: true),
+    ]);
+    expect(rebuilds, 0);
+
+    container.read(_songsStateProvider.notifier).replace([
+      song.copyWith(title: 'Ember (Live)'),
+    ]);
+    expect(rebuilds, 1);
   });
 
   test('a definitive miss is cached so it is never asked again', () async {
@@ -286,15 +357,25 @@ class _SilentAudioHandler extends BaseAudioHandler
   List<SongModel> get songs => const [];
 
   @override
+  List<SongModel> get baseSongs => songs;
+
+  @override
+  bool get shuffleEnabled => false;
+
+  @override
   Future<void> loadQueue(
     List<SongModel> songs, {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
+    bool? shuffle,
   }) async {}
 
   @override
   Future<void> setShuffleEnabled(bool enabled) async {}
+
+  @override
+  Future<void> reshuffle() async {}
 
   @override
   Future<void> setVolume(double volume) async {}

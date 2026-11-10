@@ -49,6 +49,16 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
     await _load();
   }
 
+  /// Each rendered line starts with its level tag (`[ERROR] [12:00:00] …`), so
+  /// colouring by tag lets a crash be spotted while scrolling instead of being
+  /// read line by line out of one grey block.
+  static Color _lineColor(String line) {
+    if (line.startsWith('[ERROR]')) return LjodTheme.error;
+    if (line.startsWith('[WARN]')) return LjodTheme.amber;
+    if (line.startsWith('[INFO]')) return LjodTheme.textMuted;
+    return LjodTheme.textSoft;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -143,11 +153,19 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
               )
             else
               Panel(
-                child: SelectableText(
-                  log,
+                child: SelectableText.rich(
+                  TextSpan(
+                    children: [
+                      for (final line in log.split('\n'))
+                        if (line.trim().isNotEmpty)
+                          TextSpan(
+                            text: '$line\n',
+                            style: TextStyle(color: _lineColor(line)),
+                          ),
+                    ],
+                  ),
                   style: theme.textTheme.bodySmall?.copyWith(
                     height: 1.6,
-                    color: LjodTheme.textSoft,
                     fontFamily: LjodTheme.monoFamily,
                   ),
                 ),

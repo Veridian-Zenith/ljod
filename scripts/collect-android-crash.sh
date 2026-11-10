@@ -47,7 +47,7 @@ fi
     | tail -n 600 || true
   echo
   echo "## app-private logs (debug builds only)"
-  for f in diagnostics.log ljod-crash.log; do
+  for f in diagnostics-2.log ljod-crash.log; do
     echo "--- $f ---"
     adb shell run-as "$APP_ID" cat "files/$f" 2>/dev/null \
       || adb shell run-as "$APP_ID" cat "app_flutter/$f" 2>/dev/null \

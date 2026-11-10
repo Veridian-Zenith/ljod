@@ -3,11 +3,28 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/theme/ljod_theme.dart';
 import '../../core/widgets/vz_components.dart';
 
-/// Info page showing supported formats, folder rules, and privacy notes.
+/// Info page showing supported formats, artwork and lyrics handling, folder
+/// rules and privacy notes.
 ///
-/// Reached from Settings → About.
+/// Reached from Settings → About. Everything is short, labelled and grouped:
+/// this is the screen someone opens when they want one answer, not a manual.
 class InfoScreen extends StatelessWidget {
   const InfoScreen({super.key});
+
+  static const List<String> _formats = [
+    'MP3',
+    'FLAC',
+    'AAC / M4A',
+    'MP4',
+    'OGG',
+    'OPUS',
+    'WAV',
+    'AIFF',
+    'WMA',
+    'APE',
+    'MPC',
+    'WavPack',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -26,105 +43,170 @@ class InfoScreen extends StatelessWidget {
       ),
       body: LjodBackground(
         child: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 26),
-                sliver: SliverList.list(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+            children: [
+              const SectionHeader(
+                title: 'Supported formats',
+                eyebrow: 'Formats',
+                subtitle:
+                    'Indexed by extension and read through the platform '
+                    'decoder',
+                padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [for (final format in _formats) _Pill(format)],
+              ),
+              const SizedBox(height: 24),
+              const SectionHeader(
+                title: 'Artwork & lyrics',
+                eyebrow: 'Media',
+                padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
+              const Panel(
+                child: Column(
                   children: [
-                    const SectionHeader(
-                      title: 'Supported formats',
-                      eyebrow: 'Formats',
-                      padding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 6),
-                    const _InfoRow(
-                      icon: Icons.music_note_rounded,
-                      text: 'MP3 (ID3), FLAC (Vorbis), AAC/MP4 (iTunes), OGG (Vorbis), WAV',
-                    ),
-                    const _InfoRow(
+                    _InfoRow(
                       icon: Icons.image_rounded,
-                      text: 'Embedded artwork is cached as JPEG',
+                      title: 'Cover art',
+                      text:
+                          'Embedded pictures are copied into a local cache, one '
+                          'file per unique picture, at most 4 MiB each. A folder '
+                          'image beside the track (cover, folder, front) is used '
+                          'when the tags have none. Only the full-screen player '
+                          'decodes them, so long lists stay smooth.',
                     ),
-                    const SizedBox(height: 20),
-                    const SectionHeader(
-                      title: 'Folder rules',
-                      eyebrow: 'Scanning',
-                      padding: EdgeInsets.zero,
+                    SizedBox(height: 14),
+                    _InfoRow(
+                      icon: Icons.notes_rounded,
+                      title: 'Lyrics',
+                      text:
+                          'A sidecar .lrc or .txt beside the track wins, then '
+                          'lyrics embedded in the file. The online lookup is '
+                          'only used when you enable it.',
                     ),
-                    const SizedBox(height: 6),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              const SectionHeader(
+                title: 'Folder rules',
+                eyebrow: 'Scanning',
+                padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      'Select which folders are indexed. Rules apply to the '
+                      'Choose which folders are indexed. Rules apply to the '
                       'next library scan and never change your files.',
                       style: theme.textTheme.bodySmall,
                     ),
                     const SizedBox(height: 12),
                     const _InfoRow(
                       icon: Icons.check_circle_rounded,
-                      text: 'Only: index selected folders only',
+                      title: 'Only',
+                      text: 'Index the selected folders and nothing else.',
                     ),
+                    const SizedBox(height: 10),
                     const _InfoRow(
                       icon: Icons.block_rounded,
-                      text: 'Exclude: ignore selected folders',
-                    ),
-                    const SizedBox(height: 20),
-                    const SectionHeader(
-                      title: 'Privacy',
-                      eyebrow: 'Your data',
-                      padding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Ljod is fully offline. It never uploads audio, creates '
-                      'accounts, uses ads or collects analytics. Online lyrics '
-                      'lookup is off by default; if you switch it on, only the '
-                      'track title, artist name, album (if set) and duration are '
-                      'sent to LRCLIB. Each track is asked about once; the answer '
-                      'is cached locally. No audio files leave this device.',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Toggle: Settings → Lyrics & order → Online lyrics lookup.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: LjodTheme.amber,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      title: 'Exclude',
+                      text: 'Index everything except the selected folders.',
                     ),
                   ],
                 ),
               ),
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(20, 18, 20, 32),
-                  child: Panel(
-                    borderColor: LjodTheme.amber,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.shield_rounded,
-                            size: 24,
+              const SizedBox(height: 24),
+              const SectionHeader(
+                title: 'Privacy',
+                eyebrow: 'Your data',
+                padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
+              Panel(
+                borderColor: LjodTheme.amber,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.shield_rounded,
+                          size: 20,
+                          color: LjodTheme.stable,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'LOCAL ONLY',
+                          style: theme.textTheme.labelSmall?.copyWith(
                             color: LjodTheme.stable,
+                            letterSpacing: 1.6,
+                            fontWeight: FontWeight.w700,
                           ),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Built with Flutter. All data stays on this device.',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: LjodTheme.textMuted,
-                              ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Ljod never uploads audio, creates accounts, shows ads or '
+                      'collects analytics.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Online lyrics lookup is off by default. When you switch '
+                      'it on, only the track title, artist, album (if set) and '
+                      'duration are sent to LRCLIB — one request per track, and '
+                      'the answer is cached on this device.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.toggle_on_rounded,
+                          size: 18,
+                          color: LjodTheme.amber,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Settings → Lyrics & order → Online lyrics lookup',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: LjodTheme.amber,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Panel(
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.flutter_dash_rounded,
+                      size: 22,
+                      color: LjodTheme.textMuted,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Built with Flutter. All data stays on this device.',
+                        style: theme.textTheme.bodySmall,
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ],
@@ -135,23 +217,66 @@ class InfoScreen extends StatelessWidget {
   }
 }
 
+class _Pill extends StatelessWidget {
+  const _Pill(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: LjodTheme.panelBlack,
+        borderRadius: BorderRadius.circular(LjodTheme.radiusXs),
+        border: Border.all(color: LjodTheme.borderLight),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontFamily: LjodTheme.monoFamily,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.3,
+          color: LjodTheme.textSoft,
+        ),
+      ),
+    );
+  }
+}
+
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.icon, required this.text});
+  const _InfoRow({required this.icon, required this.title, required this.text});
+
   final IconData icon;
+  final String title;
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: LjodTheme.amber),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text)),
-        ],
-      ),
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: LjodTheme.amber),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: LjodTheme.textStrong,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(text, style: theme.textTheme.bodySmall),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

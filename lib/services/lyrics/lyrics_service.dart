@@ -204,6 +204,54 @@ class LyricsQuery {
       value.trim().replaceAll(RegExp(r'\s+'), ' ');
 }
 
+/// The song fields that decide *which* lyrics are asked for.
+///
+/// Play counters, favourite state and artwork are deliberately absent: they
+/// change while a track plays, so folding them into the lyrics provider's
+/// identity rebuilt it on every play-count update. That dropped the sheet to a
+/// loading state, and for a result that was never cached (a network failure) it
+/// asked LRCLIB again.
+@immutable
+class LyricsSubject {
+  const LyricsSubject({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.path,
+    required this.duration,
+  });
+
+  factory LyricsSubject.of(SongModel song) => LyricsSubject(
+    id: song.id,
+    title: song.title,
+    artist: song.displayArtist,
+    album: song.album,
+    path: song.path,
+    duration: song.duration,
+  );
+
+  final String id;
+  final String title;
+  final String artist;
+  final String album;
+  final String path;
+  final Duration duration;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LyricsSubject &&
+      other.id == id &&
+      other.title == title &&
+      other.artist == artist &&
+      other.album == album &&
+      other.path == path &&
+      other.duration == duration;
+
+  @override
+  int get hashCode => Object.hash(id, title, artist, album, path, duration);
+}
+
 /// One remote lookup outcome.
 sealed class RemoteLyricsResult {
   const RemoteLyricsResult();
@@ -446,6 +494,7 @@ class LyricsService {
   static const int _memoryEntries = 32;
   static const int _cacheBudgetBytes = 6 * 1024 * 1024;
   static const int _trimEveryWrites = 25;
+  static const int _embeddedMemoEntries = 256;
 
   final LyricsRemote _remote;
   final Future<Directory> Function() _cacheRoot;
@@ -455,6 +504,11 @@ class LyricsService {
 
   final LinkedHashMap<String, LyricsResult> _memory = LinkedHashMap();
   final Map<String, Future<LyricsResult>> _inFlight = {};
+
+  /// Tracks whose embedded tags held no lyrics. The probe spawns an isolate and
+  /// parses tags, so a track that had none must not pay for it again on every
+  /// open; an explicit refresh re-reads in case the tags were edited.
+  final LinkedHashSet<String> _noEmbeddedLyrics = LinkedHashSet();
 
   /// Highest refresh token already served per track, so a manual refresh forces
   /// exactly one lookup instead of every later rebuild of the provider.
@@ -489,7 +543,7 @@ class LyricsService {
       }
     }
 
-    final local = await _local(song);
+    final local = await _local(song, recheckEmbedded: forced);
     if (local != null) {
       return _remember(fingerprint, LyricsResult.found(local));
     }
@@ -572,10 +626,24 @@ class LyricsService {
     return result;
   }
 
-  Future<Lyrics?> _local(SongModel song) async {
+  /// Local sources, cheapest first.
+  ///
+  /// The sidecar check is three `exists()` calls and always runs, so a `.lrc`
+  /// dropped beside a track is picked up mid-session. The embedded-tag probe is
+  /// not repeated once a file is known to carry none.
+  Future<Lyrics?> _local(
+    SongModel song, {
+    required bool recheckEmbedded,
+  }) async {
     final sidecar = await _sidecar(song.path);
     if (sidecar != null) return sidecar;
     if (song.path.isEmpty) return null;
+    return _embedded(song, recheck: recheckEmbedded);
+  }
+
+  Future<Lyrics?> _embedded(SongModel song, {required bool recheck}) async {
+    final key = '${song.id}|${song.path}';
+    if (!recheck && _noEmbeddedLyrics.contains(key)) return null;
 
     try {
       final embedded = await compute(_readEmbeddedLyrics, song.path);
@@ -585,6 +653,13 @@ class LyricsService {
       if (parsed != null && !parsed.isEmpty) return parsed;
     } catch (_) {
       // Embedded tag reading is best-effort.
+    }
+
+    // A definite "no embedded lyrics" answer, kept for the next open.
+    _noEmbeddedLyrics.remove(key);
+    _noEmbeddedLyrics.add(key);
+    while (_noEmbeddedLyrics.length > _embeddedMemoEntries) {
+      _noEmbeddedLyrics.remove(_noEmbeddedLyrics.first);
     }
     return null;
   }
@@ -609,8 +684,16 @@ class LyricsService {
   }
 
   Future<Directory?> _directory() async {
-    if (_cacheDirectory != null) return _cacheDirectory;
     try {
+      // The directory can disappear underneath a cached handle: "Clear library
+      // cache" removes it wholesale. Returning the stale path made every later
+      // write fail silently and left the cache dead until the next launch.
+      final cached = _cacheDirectory;
+      if (cached != null) {
+        if (await cached.exists()) return cached;
+        _cacheDirectory = null;
+      }
+
       final base = await _cacheRoot();
       final directory = Directory(p.join(base.path, 'lyrics'));
       if (!await directory.exists()) {
@@ -849,12 +932,26 @@ class LyricsRefreshNotifier extends Notifier<Map<String, int>> {
   }
 }
 
+/// The lyrics identity of a track, stable across play-count and favourite
+/// changes. `null` once the track is no longer in the library.
+final lyricsSubjectProvider = Provider.family<LyricsSubject?, String>((
+  ref,
+  songId,
+) {
+  return ref.watch(
+    songByIdProvider(songId)
+        .select((song) => song == null ? null : LyricsSubject.of(song)),
+  );
+});
+
 final lyricsProvider = FutureProvider.family<LyricsResult, String>((
   ref,
   songId,
 ) async {
-  final song = ref.watch(songByIdProvider(songId));
-  if (song == null) return const LyricsResult(status: LyricsStatus.notFound);
+  // Watching the subject rather than the song keeps play counters, favourite
+  // toggles and artwork out of this provider's identity.
+  final subject = ref.watch(lyricsSubjectProvider(songId));
+  if (subject == null) return const LyricsResult(status: LyricsStatus.notFound);
 
   // Only the toggle matters here: changing the theme must not refetch lyrics.
   final allowOnline = ref.watch(
@@ -863,6 +960,11 @@ final lyricsProvider = FutureProvider.family<LyricsResult, String>((
   final refreshToken = ref.watch(
     lyricsRefreshProvider.select((tokens) => tokens[songId] ?? 0),
   );
+
+  // The subject above already covers every field `load` reads, so this cannot
+  // observe a song the provider has not seen.
+  final song = ref.read(songByIdProvider(songId));
+  if (song == null) return const LyricsResult(status: LyricsStatus.notFound);
 
   return ref
       .read(lyricsServiceProvider)

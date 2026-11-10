@@ -44,15 +44,25 @@ class _RecordingHandler extends BaseAudioHandler
   List<SongModel> get songs => const [];
 
   @override
+  List<SongModel> get baseSongs => songs;
+
+  @override
+  bool get shuffleEnabled => false;
+
+  @override
   Future<void> loadQueue(
     List<SongModel> songs, {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
+    bool? shuffle,
   }) async {}
 
   @override
   Future<void> setShuffleEnabled(bool enabled) async {}
+
+  @override
+  Future<void> reshuffle() async {}
 
   @override
   Future<void> setVolume(double volume) async {}
@@ -257,6 +267,20 @@ void main() {
       expect(restored.playCount, 9);
       expect(restored.lastPlayed, song.lastPlayed);
       expect(restored.addedAt, song.addedAt);
+    });
+
+    test('an empty artwork path is not offered as a notification image', () {
+      // Clearing the artwork cache used to store '' rather than null; the
+      // notification then tried to decode a directory URI and showed nothing.
+      const song = SongModel(
+        id: '1',
+        path: '/music/a.mp3',
+        title: 'Track',
+        artist: 'Artist',
+        artworkPath: '',
+      );
+
+      expect(song.toMediaItem().artUri, isNull);
     });
 
     test('filename fallback parses artist and title', () {

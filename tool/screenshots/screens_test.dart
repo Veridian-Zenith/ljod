@@ -145,7 +145,10 @@ Future<void> _configureView(WidgetTester tester) async {
     _logicalSize.width * _dpr,
     _logicalSize.height * _dpr,
   );
-  tester.view.padding = const FakeViewPadding(top: 24 * _dpr, bottom: 34 * _dpr);
+  tester.view.padding = const FakeViewPadding(
+    top: 24 * _dpr,
+    bottom: 34 * _dpr,
+  );
   addTearDown(tester.view.reset);
 }
 
@@ -246,10 +249,7 @@ const _foundLyrics = LyricsResult.found(
         time: Duration(seconds: 29),
         text: 'Every ember keeps its story',
       ),
-      LyricLine(
-        time: Duration(seconds: 45),
-        text: 'Every scar a little more',
-      ),
+      LyricLine(time: Duration(seconds: 45), text: 'Every scar a little more'),
       LyricLine(
         time: Duration(minutes: 1, seconds: 2),
         text: 'I am counting what the fire gave',
@@ -362,15 +362,25 @@ class _NowPlayingHandler extends BaseAudioHandler
   List<SongModel> get songs => [_song];
 
   @override
+  List<SongModel> get baseSongs => songs;
+
+  @override
+  bool get shuffleEnabled => false;
+
+  @override
   Future<void> loadQueue(
     List<SongModel> songs, {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
+    bool? shuffle,
   }) async {}
 
   @override
   Future<void> setShuffleEnabled(bool enabled) async {}
+
+  @override
+  Future<void> reshuffle() async {}
 
   @override
   Future<void> setVolume(double volume) async {}

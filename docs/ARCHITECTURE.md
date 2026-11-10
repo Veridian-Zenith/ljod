@@ -97,16 +97,80 @@ cache, so a schema bump drops and recreates the tables rather than migrating.
 
 ### Artwork
 
-Covers are written to `<app support>/artwork`, one file per song id. Files above
-2 MiB are skipped rather than stored, and the service reports total usage so
-Settings can show it. Clearing the artwork cache also nulls `artworkPath` so the
-next scan re-extracts.
+Covers are written to `<app support>/artwork`, one file per unique picture, so
+tracks from one album share a file. A cover is looked up in this order:
+
+1. the previously extracted file, when it still exists (no re-read on rescans);
+2. the picture embedded in the track's tags, read in the scan isolate;
+3. an image beside the track — `cover`, `folder`, `front`, `album`, `albumart`,
+   `albumartsmall`, `artwork`, `thumb`, or the track's own file name, in JPEG,
+   PNG, WebP, GIF or BMP, matched case-insensitively;
+4. on Android, `MediaMetadataRetriever` from the track's content URI, which also
+   covers files the isolate cannot open and MediaStore's generated thumbnail.
+
+On Android a cover is cached in two steps. The extraction pass accepts the raw
+picture up to 24 MiB and writes it as it came from the tag; a downscaling pass
+right after re-encodes it through the platform decoder (`BitmapFactory`) as a
+1024 px JPEG, caches the result under its content hash, and lets the scan prune
+the full-size original. Without that pass a library of 2000×2000 PNG covers
+reached 1.46 GB for 1064 tracks, and covers over the 4 MiB ceiling were refused
+before they were ever downscaled — 680 of 1744 tagged tracks showed no artwork
+because of it. Elsewhere (desktop) nothing downscales, so a cover above 4 MiB is
+skipped rather than stored.
+
+The service reports total usage so Settings can show it, and each scan logs how
+many tracks got a cover per source, counting only files that still exist.
+Clearing the artwork cache also nulls `artworkPath` so the next scan
+re-extracts.
+
+Stored paths are verified against the filesystem when the library loads and
+before each scan. That check is necessary because `upsertSongs` keeps an
+existing path when a scan produces no art for a track (`COALESCE`), so without
+it a path that outlived its file could never be corrected — the row would keep
+pointing at a deleted cover forever, and every tile would fail to decode.
+
+Trimming never deletes a cover the library still references. It did once, to
+hold the directory under a byte budget: the scan extracted hundreds of covers,
+the trim cut them back to the budget, and the database then forgot every path
+that was deleted, so most tracks lost their art again. A cover can only be
+recreated by reading its audio file, so the budget now applies to unreferenced
+leftovers only, and a library's artwork is allowed to use the space it needs.
+
+Every write re-creates the directory if it is missing: clearing a cache deletes
+it, and a write that assumed it still existed failed silently, which meant no
+cover could ever return. Orphan pruning is skipped when a scan cannot name a
+single referenced cover, and covers the database still references are always
+kept, so a scan that fails to read tags cannot discard art the library points
+at.
+
+Covers paint wherever artwork appears — rows, grids, rails, the queue, the mini
+player and the full-screen player — always through `CoverArt`, which decodes at
+the size the widget actually paints (`cacheWidth`/`cacheHeight`, capped at
+1024 px). Decoding a 2000×2000 cover for a 54 px row was what made scrolling
+churn the image cache, and that cost is now bounded per tile. A cover that
+cannot be decoded paints the designed initials fallback and writes one
+`artwork: could not decode …` line to Diagnostics, so a missing file is not
+indistinguishable from an untagged one. The media notification is unaffected —
+it points at the cached file through the `MediaItem`'s `artUri`.
 
 ## Playback
 
 `LjodAudioHandler` (an `audio_service` `BaseAudioHandler`) owns a `just_audio`
 player plus the queue, shuffle, repeat and favourites state, and publishes
 `MediaItem`s so the notification, media buttons and lock screen work.
+
+Shuffle is materialised into the queue instead of being delegated to
+`just_audio`, whose own shuffle order is private to the plugin: enabling it
+deals the base order with a Fisher–Yates shuffle (`shuffle_order.dart`) that
+keeps the current track first, then reloads the queue at the same position.
+Everything that answers "what plays next" — the up-next strip, the queue sheet
+and the notification — reads the queue, so all three agree, and turning shuffle
+off restores the stored library order.
+
+The last session (queue ids, track index, position, shuffle, repeat) is written
+to `SharedPreferences` on track and state changes and every few seconds while
+playing, then restored at launch **paused**: audio that starts by itself on
+launch would be a worse surprise than losing the position.
 
 Notification behaviour is deliberate:
 
@@ -137,7 +201,7 @@ every 25 writes, and legacy `.lrc` files written by older builds are removed.
 ## Diagnostics
 
 `DiagnosticsLog` keeps a 128 KiB ring of timestamped lines in
-`<app support>/diagnostics.log`. Dart errors (`FlutterError.onError`,
+`<app support>/diagnostics-2.log`. Dart errors (`FlutterError.onError`,
 `PlatformDispatcher.onError`) are appended without replacing Flutter's normal
 console reporting. The Android layer writes an uncaught exception to
 `ljod-crash.log` before the process dies; that file is folded into the log on
@@ -149,7 +213,9 @@ the next launch and then deleted. Settings → Diagnostics can copy or clear it.
 | --- | --- | --- |
 | Image cache | 120 entries / 96 MiB | `main.dart` |
 | Diagnostics log | 128 KiB | `DiagnosticsLog.maxBytes` |
-| Artwork file | 2 MiB | `ArtworkCache.maxFileBytes` |
+| Artwork file | 4 MiB (Android: downscaled to 1024 px first) | `ArtworkCache.maxFileBytes` |
+| Artwork raw input | 24 MiB, Android only | `LibraryService._maxRawArtworkBytes` |
+| Artwork disk budget | 192 MiB (unreferenced files only) | `ArtworkCache.defaultBudgetBytes` |
 | Lyrics disk budget | 6 MiB | `LyricsService` |
 | Lyrics memory LRU | 32 entries | `LyricsService` |
 | LRCLIB timeouts | 6 s connect / 8 s receive | `LrclibRemote` |

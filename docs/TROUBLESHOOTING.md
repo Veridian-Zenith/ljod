@@ -18,8 +18,28 @@ crash traces captured on the previous launch) and has Copy and Clear actions.
 
 ## Tracks appear but have no cover art
 
-* Only embedded artwork and local images are used; nothing is fetched online.
-* Images larger than 2 MiB are skipped to protect memory.
+* Covers come from the track's own tags first, then from an image stored beside
+  it: `cover`, `folder`, `front`, `album`, `albumart`, `artwork`, `thumb`, or a
+  file named after the track, in JPEG, PNG, WebP, GIF or BMP. Nothing is
+  fetched online.
+* On Android every cover is downscaled to a 1024 px JPEG before it is cached,
+  in whichever format it arrived (JPEG, PNG, WebP, GIF, BMP). A full-size PNG
+  cover is 2–8 MiB; downscaled, the same art is a few hundred kilobytes. Covers
+  cached before this existed are converted on the next scan.
+* Outside Android nothing downscales, so a cover above 4 MiB is skipped rather
+  than stored.
+* Settings → Diagnostics writes an `artwork:` line per scan that says how many
+  tracks got a cover and whether it came from embedded art, a sidecar image, the
+  platform bridge, or the existing cache.
+* Covers show in rows, grids, rails, the queue, the mini player and the player.
+  A tile that still shows initials while another screen shows the cover is a
+  decode failure, not a missing image: look for
+  `artwork: could not decode <path>` in Diagnostics, which now records the file
+  and the decoder error instead of failing silently.
+* A stored path whose file has disappeared is caught when the app loads and
+  before every scan: the dead path is forgotten and its cover is extracted
+  again in the background. `artwork: N cached cover(s) were missing;
+  re-extracting` in Diagnostics means this repair ran.
 * After clearing the artwork cache, covers reappear on the next scan. Force one
   with Settings → Rescan device.
 
