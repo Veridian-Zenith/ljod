@@ -4,19 +4,13 @@ on:
   push:
     tags:
       - 'v*'
-  # Manual trigger so a release can be built and published again without moving
-  # a tag or inventing a version: the dispatch builds the selected ref and
-  # replaces the asset on that version's release.
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to publish, e.g. 0.3.2 (empty uses pubspec.yaml)'
-        required: false
-        default: ''
 
-# No permissions block: Forgejo ignores it and warns on every run, granting
-# the job token through Authorized Integrations instead. Publishing a release
-# therefore depends on that integration having repository write access.
+# `contents: write` is required to create the GitHub release and attach the
+# APK to it; the build itself only needs to read the repository.
+permissions:
+  contents: write
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -28,169 +22,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # One place decides which release this run publishes. A tag push is named
-      # by its tag; a manual run takes the `version` input, or pubspec's version
-      # when that input is empty. Both paths read the version from the checkout,
-      # so the APK and the release cannot disagree about it.
-      - name: Resolve the release version
-        id: release
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          declared="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '[:space:]')"
-          name="${declared%%+*}"
-          tag="v${name}"
-
-          if [ -n "${INPUT_VERSION}" ]; then
-            case "${INPUT_VERSION}" in
-              v*) tag="${INPUT_VERSION}" ;;
-              *)  tag="v${INPUT_VERSION}" ;;
-            esac
-          fi
-
-          # A tag push is named by its tag, so the two must already agree;
-          # otherwise the APK would claim one version and the release another.
-          # A manual run is not held to this: republishing an existing tag from
-          # a later commit is the whole point of the input.
-          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "${tag}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${declared} (expected ${tag})." >&2
-            echo "Bump the version, or run this workflow manually to publish ${tag}." >&2
-            exit 1
-          fi
-
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "Publishing ${tag} from ${GITHUB_REF_NAME} (${GITHUB_REF_TYPE})."
-
       - name: Set up JDK 21
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
 
-      # Absolute URL: Forgejo's action mirror (data.forgejo.org) does not carry
-      # subosito/flutter-action, so a bare reference fails to resolve.
-      #
-      # It unpacks into /opt/hostedtoolcache owned by another user, so git
-      # exits 128 with "dubious ownership" unless the directory is trusted.
-      # A wrong key password otherwise surfaces only when Gradle reaches
-      # packageRelease, minutes in, as "Failed to read key <alias> from store
-      # ...: null" with no hint about which secret is wrong. Check the material
-      # first, while the build is still cheap.
-      - name: Verify the signing secrets
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          missing=""
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD \
-                      ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            if [ -z "$(printenv "${name}" || true)" ]; then
-              missing="${missing} ${name}"
-            fi
-          done
-          if [ -n "${missing}" ]; then
-            echo "Missing or empty repository secrets:${missing}" >&2
-            echo "Add them under Settings -> Actions -> Secrets." >&2
-            exit 1
-          fi
-
-          store="${RUNNER_TEMP:-/tmp}/signing-check.p12"
-          csr="${RUNNER_TEMP:-/tmp}/signing-check.csr"
-          trap 'rm -f "${store}" "${csr}"' EXIT
-
-          if ! printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${store}"; then
-            echo "ANDROID_KEYSTORE_BASE64 is not valid base64." >&2
-            exit 1
-          fi
-          echo "Keystore decoded: $(wc -c < "${store}") bytes."
-
-          # Loading the store verifies its MAC, so this fails only on a wrong or
-          # wrapped store password.
-          if ! keytool -list -keystore "${store}" \
-                 -storepass "${ANDROID_KEYSTORE_PASSWORD}" > /dev/null 2>&1; then
-            echo "ANDROID_KEYSTORE_PASSWORD does not open the keystore." >&2
-            exit 1
-          fi
-          echo "ANDROID_KEYSTORE_PASSWORD opens the keystore."
-
-          if ! keytool -list -keystore "${store}" -alias "${ANDROID_KEY_ALIAS}" \
-                 -storepass "${ANDROID_KEYSTORE_PASSWORD}" > /dev/null 2>&1; then
-            echo "ANDROID_KEY_ALIAS '${ANDROID_KEY_ALIAS}' is not in the keystore." >&2
-            exit 1
-          fi
-          echo "ANDROID_KEY_ALIAS '${ANDROID_KEY_ALIAS}' is present."
-
-          # A certificate request has to reach the private key, so this fails
-          # exactly when the key password is wrong. It writes only a throwaway
-          # file and needs no network.
-          if ! keytool -certreq -keystore "${store}" \
-                 -storepass "${ANDROID_KEYSTORE_PASSWORD}" \
-                 -alias "${ANDROID_KEY_ALIAS}" \
-                 -keypass "${ANDROID_KEY_PASSWORD}" \
-                 -file "${csr}" > /dev/null 2>&1; then
-            echo "ANDROID_KEY_PASSWORD does not unlock '${ANDROID_KEY_ALIAS}'." >&2
-            echo "This keystore is PKCS12, so the key password must equal" \
-                 "ANDROID_KEYSTORE_PASSWORD." >&2
-            exit 1
-          fi
-          echo "ANDROID_KEY_PASSWORD unlocks '${ANDROID_KEY_ALIAS}'."
-
-      - name: Trust the Flutter tool cache
-        run: git config --global --add safe.directory '*'
-
       - name: Set up Flutter
-        uses: https://github.com/subosito/flutter-action@v2
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.9'
           channel: stable
           cache: true
 
-      # `flutter pub get` resolves plugin platform implementations and exits 1 with
-      # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
-      # when none is installed, so even the analysis-only jobs need an SDK; the APK
-      # jobs need one to build regardless. This image ships none, so install it at the
-      # level compileSdk asks for (37).
-      - name: Set up Android SDK
+      - name: Check the tag matches pubspec
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
-          sdk="${RUNNER_TEMP:-${HOME:-/tmp}}/android-sdk"
-          manager="${sdk}/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -x "${manager}" ]; then
-            echo "Installing Android command-line tools into ${sdk}."
-            tmp="$(dirname "${sdk}")/tmp-tools"
-            mkdir -p "${sdk}/cmdline-tools" "${tmp}/unpacked"
-            curl -fsSL -o "${tmp}/cmdline-tools.zip" \
-              "https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip"
-            if command -v unzip > /dev/null; then
-              unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}/unpacked"
-            else
-              python3 -m zipfile -e "${tmp}/cmdline-tools.zip" "${tmp}/unpacked"
-            fi
-            rm -rf "${sdk}/cmdline-tools/latest"
-            mv "${tmp}/unpacked/cmdline-tools" "${sdk}/cmdline-tools/latest"
-            rm -rf "${tmp}"
+          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '[:space:]')"
+          name="${version%%+*}"
+          if [ "v${name}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${version} (expected v${name})." >&2
+            exit 1
           fi
-
-          # The licence prompts read stdin; `yes` answers them. It dies of SIGPIPE
-          # once sdkmanager stops reading, which is expected and not a failure.
-          yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
-
-          # The NDK is required, not optional: the `jni` plugin compiles native
-          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
-          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
-          "${manager}" --sdk_root="${sdk}" --install \
-            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
-            "ndk;28.2.13676358"
-
-          echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
-          echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
-          echo "Android SDK ready at ${sdk}"
+          echo "Building ${name} from tag ${GITHUB_REF_NAME}."
 
       - name: Install dependencies
         run: flutter pub get
@@ -198,19 +53,7 @@ jobs:
       # The keystore is passed as content, never as a path: nothing has to exist
       # in the repository, and the workflow never writes the key to a tracked
       # location. Gradle decodes it into its disposable build/ directory.
-      # One APK per phone architecture, never a universal one: the universal
-      # build packed three copies of libflutter.so and libapp.so and came to
-      # 70 MiB, of which anything the device could actually run was a third.
-      #
-      # x86_64 is emulator-only and was the largest of the three copies, so it is
-      # simply not built. armv7 stays: it costs one extra upload and covers
-      # 64-bit hardware running a 32-bit userspace.
-      #
-      # --split-debug-info keeps DWARF out of the shipped libapp.so. The symbols
-      # are written to build/symbols and deliberately not published — this runner
-      # has no artifact service, and they are only useful for symbolising a crash
-      # trace from a build whose exact symbols you kept.
-      - name: Build signed APKs
+      - name: Build signed APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -218,102 +61,56 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          flutter build apk --release \
-            --split-per-abi \
-            --target-platform android-arm64,android-arm \
-            --split-debug-info=build/symbols
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 is empty; refusing to publish an unsigned build." >&2
+            exit 1
+          fi
+          flutter build apk --release
 
-      - name: Verify the APKs are signed
+      - name: Verify the APK is signed
         run: |
           set -euo pipefail
           build_tools="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -1)"
-          shopt -s nullglob
-          apks=(build/app/outputs/flutter-apk/app-*-release.apk)
-          if [ ${#apks[@]} -eq 0 ]; then
-            echo "No per-ABI APK was produced." >&2
-            exit 1
-          fi
-          for apk in "${apks[@]}"; do
-            echo "Verifying ${apk} ($(du -h "${apk}" | cut -f1))"
-            "${build_tools}/apksigner" verify --verbose "${apk}"
-          done
+          "${build_tools}/apksigner" verify --verbose \
+            build/app/outputs/flutter-apk/app-release.apk
 
       - name: Remove the decoded keystore
         if: always()
         run: rm -rf android/.gradle-signing
 
-      # No artifact upload: this runner identifies as GHES and the artifact
-      # service is absent, so the step fails the job after a successful build.
-      # The release asset below is the durable, user-facing copy anyway.
-
-      # This publishes the signed APK where users can download it, and is the
-      # only copy: the runner has no artifact service.
-      #
-      # GitHub's `gh release` speaks github.com only, so this talks to the
-      # Forgejo REST API directly with the per-run job token. Running it again —
-      # by tag push or manually — replaces the attached APK instead of failing
-      # on a name clash.
-      - name: Publish release
-        if: steps.release.outputs.tag != ''
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SERVER: ${{ github.server_url }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ steps.release.outputs.tag }}
-          TARGET: ${{ github.sha }}
+      - name: Resolve artifact name
+        id: artifact
         run: |
           set -euo pipefail
-          api="${SERVER}/api/v1/repos/${REPO}"
-          auth="Authorization: token ${TOKEN}"
-          version="${TAG#v}"
-          shopt -s nullglob
-          names=()
-          for source in build/app/outputs/flutter-apk/app-*-release.apk; do
-            abi="$(basename "${source}" | sed -E 's/^app-(.*)-release\.apk$/\1/')"
-            name="ljod-${version}-${abi}.apk"
-            cp "${source}" "${name}"
-            names+=("${name}")
-          done
-          if [ ${#names[@]} -eq 0 ]; then
-            echo "No per-ABI APK found to publish." >&2
-            exit 1
+          name="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '[:space:]')"
+          echo "name=ljod-${name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # The artifact above is only reachable from the Actions tab and expires;
+      # this publishes the signed APK where users can actually download it.
+      # Re-running the workflow replaces the attached APK instead of failing.
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          apk="ljod-${GITHUB_REF_NAME#v}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "${apk}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists; replacing its APK."
+            gh release upload "${GITHUB_REF_NAME}" "${apk}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${apk}" \
+              --title "Ljod ${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --verify-tag
           fi
-
-          status="$(curl -sS -o /tmp/release.json -w '%{http_code}' \
-            -H "${auth}" "${api}/releases/tags/${TAG}")"
-          if [ "${status}" = "404" ]; then
-            echo "No release for ${TAG} yet; creating one."
-            curl -sS -f -X POST "${api}/releases" \
-              -H "${auth}" -H 'Content-Type: application/json' \
-              -d "{\"tag_name\":\"${TAG}\",\"target_commitish\":\"${TARGET}\",\"name\":\"Ljod ${TAG}\"}" \
-              > /tmp/release.json
-          elif [ "${status}" != "200" ]; then
-            echo "Could not look up the release for ${TAG} (HTTP ${status}):" >&2
-            cat /tmp/release.json >&2
-            exit 1
-          fi
-
-          release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' /tmp/release.json)"
-
-          # Re-runs must replace the assets, not fail on a name clash. The legacy
-          # single-APK name is cleared as well, so an older 70 MiB universal
-          # build cannot linger beside the smaller per-ABI ones on the same tag.
-          assets="$(mktemp)"
-          trap 'rm -f "${assets}" "${names[@]}"' EXIT
-          curl -sS -f -H "${auth}" "${api}/releases/${release_id}/assets" > "${assets}"
-
-          for name in "${names[@]}" "ljod-${version}.apk"; do
-            stale="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); print(" ".join(str(a["id"]) for a in rows if a["name"]==sys.argv[2]))' "${assets}" "${name}")"
-            for asset_id in ${stale}; do
-              echo "Removing stale asset ${asset_id} (${name})."
-              curl -sS -f -X DELETE -H "${auth}" \
-                "${api}/releases/${release_id}/assets/${asset_id}" -o /dev/null
-            done
-          done
-
-          for name in "${names[@]}"; do
-            curl -sS -f -X POST -H "${auth}" \
-              -F "attachment=@${name}" \
-              "${api}/releases/${release_id}/assets?name=${name}" -o /dev/null
-            echo "Published ${name} ($(du -h "${name}" | cut -f1)) to ${SERVER}/${REPO}/releases/tag/${TAG}"
-          done
+          gh release view "${GITHUB_REF_NAME}" --json url --jq '"Published " + .url'

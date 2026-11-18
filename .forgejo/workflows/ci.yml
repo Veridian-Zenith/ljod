@@ -1,0 +1,339 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# No permissions block: Forgejo does not support the `permissions` key and
+# warns on every run, expecting capabilities to be granted through
+# Authorized Integrations instead. Declaring it here did nothing.
+# One run per branch/PR; a new push cancels the superseded run instead of
+# queueing another five-minute debug build behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.9'
+
+# Forgejo resolves a bare `owner/action` against its own mirror
+# (DEFAULT_ACTIONS_URL, data.forgejo.org), which mirrors the actions/* repos but
+# not subosito/flutter-action — there a bare `subosito/flutter-action@v2` fails
+# with "repository not found". The absolute URL below bypasses the mirror;
+# actions/* stay bare so they keep using it. Expressions are not allowed in
+# `uses:`, hence the repeated literal.
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The runner's tool cache is unpacked under /opt/hostedtoolcache by
+      # another user, so git exits 128 with "dubious ownership" — fatal both to
+      # the setup action and to the Flutter tool's own git calls. The path is
+      # not known ahead of time, so the wildcard entry is the reliable form.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
+
+      - name: Set up Flutter
+        uses: https://github.com/subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # `flutter pub get` resolves plugin platform implementations and exits 1 with
+      # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
+      # when none is installed, so even the analysis-only jobs need an SDK; the APK
+      # jobs need one to build regardless. This image ships none, so install it at the
+      # level compileSdk asks for (37).
+      - name: Set up Android SDK
+        run: |
+          set -euo pipefail
+          sdk="${RUNNER_TEMP:-${HOME:-/tmp}}/android-sdk"
+          manager="${sdk}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "${manager}" ]; then
+            echo "Installing Android command-line tools into ${sdk}."
+            tmp="$(dirname "${sdk}")/tmp-tools"
+            mkdir -p "${sdk}/cmdline-tools" "${tmp}/unpacked"
+            curl -fsSL -o "${tmp}/cmdline-tools.zip" \
+              "https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip"
+            if command -v unzip > /dev/null; then
+              unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}/unpacked"
+            else
+              python3 -m zipfile -e "${tmp}/cmdline-tools.zip" "${tmp}/unpacked"
+            fi
+            rm -rf "${sdk}/cmdline-tools/latest"
+            mv "${tmp}/unpacked/cmdline-tools" "${sdk}/cmdline-tools/latest"
+            rm -rf "${tmp}"
+          fi
+
+          # The licence prompts read stdin; `yes` answers them. It dies of SIGPIPE
+          # once sdkmanager stops reading, which is expected and not a failure.
+          yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
+
+          # The NDK is required, not optional: the `jni` plugin compiles native
+          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
+          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
+          "${manager}" --sdk_root="${sdk}" --install \
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
+
+          echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
+          echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
+          echo "Android SDK ready at ${sdk}"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze
+        run: flutter analyze
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The runner's tool cache is unpacked under /opt/hostedtoolcache by
+      # another user, so git exits 128 with "dubious ownership" — fatal both to
+      # the setup action and to the Flutter tool's own git calls. The path is
+      # not known ahead of time, so the wildcard entry is the reliable form.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
+
+      - name: Set up Flutter
+        uses: https://github.com/subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # `flutter pub get` resolves plugin platform implementations and exits 1 with
+      # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
+      # when none is installed, so even the analysis-only jobs need an SDK; the APK
+      # jobs need one to build regardless. This image ships none, so install it at the
+      # level compileSdk asks for (37).
+      - name: Set up Android SDK
+        run: |
+          set -euo pipefail
+          sdk="${RUNNER_TEMP:-${HOME:-/tmp}}/android-sdk"
+          manager="${sdk}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "${manager}" ]; then
+            echo "Installing Android command-line tools into ${sdk}."
+            tmp="$(dirname "${sdk}")/tmp-tools"
+            mkdir -p "${sdk}/cmdline-tools" "${tmp}/unpacked"
+            curl -fsSL -o "${tmp}/cmdline-tools.zip" \
+              "https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip"
+            if command -v unzip > /dev/null; then
+              unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}/unpacked"
+            else
+              python3 -m zipfile -e "${tmp}/cmdline-tools.zip" "${tmp}/unpacked"
+            fi
+            rm -rf "${sdk}/cmdline-tools/latest"
+            mv "${tmp}/unpacked/cmdline-tools" "${sdk}/cmdline-tools/latest"
+            rm -rf "${tmp}"
+          fi
+
+          # The licence prompts read stdin; `yes` answers them. It dies of SIGPIPE
+          # once sdkmanager stops reading, which is expected and not a failure.
+          yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
+
+          # The NDK is required, not optional: the `jni` plugin compiles native
+          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
+          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
+          "${manager}" --sdk_root="${sdk}" --install \
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
+
+          echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
+          echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
+          echo "Android SDK ready at ${sdk}"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test --reporter expanded
+
+  build:
+    name: Debug APK
+    # The APK is the expensive job; only build it once the cheap checks pass.
+    needs: [analyze, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The runner's tool cache is unpacked under /opt/hostedtoolcache by
+      # another user, so git exits 128 with "dubious ownership" — fatal both to
+      # the setup action and to the Flutter tool's own git calls. The path is
+      # not known ahead of time, so the wildcard entry is the reliable form.
+      - name: Trust the Flutter tool cache
+        run: git config --global --add safe.directory '*'
+
+      - name: Set up Flutter
+        uses: https://github.com/subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # `flutter pub get` resolves plugin platform implementations and exits 1 with
+      # "No Android SDK found. Try setting the ANDROID_HOME environment variable."
+      # when none is installed, so even the analysis-only jobs need an SDK; the APK
+      # jobs need one to build regardless. This image ships none, so install it at the
+      # level compileSdk asks for (37).
+      - name: Set up Android SDK
+        run: |
+          set -euo pipefail
+          sdk="${RUNNER_TEMP:-${HOME:-/tmp}}/android-sdk"
+          manager="${sdk}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "${manager}" ]; then
+            echo "Installing Android command-line tools into ${sdk}."
+            tmp="$(dirname "${sdk}")/tmp-tools"
+            mkdir -p "${sdk}/cmdline-tools" "${tmp}/unpacked"
+            curl -fsSL -o "${tmp}/cmdline-tools.zip" \
+              "https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip"
+            if command -v unzip > /dev/null; then
+              unzip -q "${tmp}/cmdline-tools.zip" -d "${tmp}/unpacked"
+            else
+              python3 -m zipfile -e "${tmp}/cmdline-tools.zip" "${tmp}/unpacked"
+            fi
+            rm -rf "${sdk}/cmdline-tools/latest"
+            mv "${tmp}/unpacked/cmdline-tools" "${sdk}/cmdline-tools/latest"
+            rm -rf "${tmp}"
+          fi
+
+          # The licence prompts read stdin; `yes` answers them. It dies of SIGPIPE
+          # once sdkmanager stops reading, which is expected and not a failure.
+          yes | "${manager}" --sdk_root="${sdk}" --licenses > /dev/null || true
+
+          # The NDK is required, not optional: the `jni` plugin compiles native
+          # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
+          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
+          "${manager}" --sdk_root="${sdk}" --install \
+            "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
+
+          echo "ANDROID_HOME=${sdk}" >> "${GITHUB_ENV}"
+          echo "ANDROID_SDK_ROOT=${sdk}" >> "${GITHUB_ENV}"
+          echo "Android SDK ready at ${sdk}"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Debug signing uses the generated debug keystore, so no repository
+      # secret is involved and fork PRs work unchanged. The ABIs match the
+      # release build: x86_64 exists only for emulators and would otherwise
+      # account for a third of a download no phone can use. Debug output is
+      # left unstripped on purpose — symbols are the point of a debug build.
+      - name: Build debug APKs
+        run: |
+          set -euo pipefail
+          flutter build apk --debug \
+            --split-per-abi \
+            --target-platform android-arm64,android-arm
+
+      # There is no artifact service on this host: the runner identifies as
+      # GHES, so upload-artifact fails with "@actions/artifact v2.0.0+ ...
+      # not supported on GHES" and the mirror carries only v5-v7, leaving no
+      # older release to pin. A prerelease is the replacement: it gives the
+      # debug APK a stable download URL without cutting a version tag, and
+      # re-runs replace the asset instead of accumulating copies.
+      #
+      # Forgejo creates the `debug` tag on first publication, because a release
+      # must hang off a tag; that tag is the only one this file ever creates.
+      - name: Publish debug APK as a prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          api="${SERVER}/api/v1/repos/${REPO}"
+          auth="Authorization: token ${TOKEN}"
+          tag="debug"
+
+          sources=(build/app/outputs/flutter-apk/app-*-debug.apk)
+          if [ ${#sources[@]} -eq 0 ]; then
+            echo 'The build produced no per-ABI debug APK.' >&2
+            ls -la build/app/outputs/flutter-apk >&2 || true
+            exit 1
+          fi
+
+          names=()
+          for source in "${sources[@]}"; do
+            abi="${source#*app-}"
+            abi="${abi%-debug.apk}"
+            name="ljod-debug-${abi}.apk"
+            cp "${source}" "${name}"
+            names+=("${name}")
+            echo "Prepared ${name} ($(du -h "${name}" | cut -f1))."
+          done
+          trap 'rm -f "${names[@]}"' EXIT
+
+          status="$(curl -sS -o /tmp/debug-release.json -w '%{http_code}' \
+            -H "${auth}" "${api}/releases/tags/${tag}")"
+          if [ "${status}" = "404" ]; then
+            echo "No ${tag} release yet; creating it."
+            curl -sS -f -X POST "${api}/releases" \
+              -H "${auth}" -H 'Content-Type: application/json' \
+              -d "{\"tag_name\":\"${tag}\",\"target_commitish\":\"${SHA}\",\"name\":\"Debug build\",\"body\":\"Rolling debug APKs from main, one per ABI. Replaced on every push; unsigned for release use.\",\"prerelease\":true,\"draft\":false}" \
+              > /tmp/debug-release.json
+          elif [ "${status}" != "200" ]; then
+            echo "Could not look up the ${tag} release (HTTP ${status}):" >&2
+            cat /tmp/debug-release.json >&2
+            exit 1
+          fi
+
+          release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' /tmp/debug-release.json)"
+
+          # Re-runs must replace the assets, not fail on a name clash, and the
+          # legacy single-APK asset must not linger beside them.
+          stale="$(curl -sS -f -H "${auth}" "${api}/releases/${release_id}/assets" \
+            | python3 -c 'import json,sys; keep=set(sys.argv[1:]); print(" ".join(str(a["id"]) for a in json.load(sys.stdin) if a["name"] in keep or a["name"]=="ljod-debug.apk"))' "${names[@]}")"
+          for asset_id in ${stale}; do
+            echo "Removing stale asset ${asset_id}."
+            curl -sS -f -X DELETE -H "${auth}" \
+              "${api}/releases/${release_id}/assets/${asset_id}" -o /dev/null
+          done
+
+          for name in "${names[@]}"; do
+            curl -sS -f -X POST "${api}/releases/${release_id}/assets?name=${name}" \
+              -H "${auth}" -F "attachment=@${name}" -o /dev/null
+            echo "Uploaded ${name}."
+          done
+          echo "Published ${#names[@]} debug APKs to ${SERVER}/${REPO}/releases/tag/${tag}"
