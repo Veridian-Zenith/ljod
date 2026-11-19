@@ -119,36 +119,38 @@ void main() {
     );
   });
 
-  test('play counts and favourites do not rebuild the lyrics request', () {
+  test('play counts and favourites do not rebuild the lyrics request', () async {
     final song = _song();
+    SharedPreferences.setMockInitialValues({'settings.lyricsLookup': true});
+    final preferences = await SharedPreferences.getInstance();
+    final remote = _FakeRemote((_) => const RemoteLyricsMiss());
     final container = ProviderContainer(
       overrides: [
         songsProvider.overrideWith((ref) => ref.watch(_songsStateProvider)),
+        sharedPreferencesProvider.overrideWithValue(preferences),
+        lyricsServiceProvider.overrideWithValue(service(remote)),
       ],
     );
     addTearDown(container.dispose);
 
     container.read(_songsStateProvider.notifier).replace([song]);
+    await container.read(lyricsProvider(song.id).future);
+    expect(remote.calls, 1);
 
-    var rebuilds = 0;
-    final subscription = container.listen(
-      lyricsSubjectProvider(song.id),
-      (_, _) => rebuilds++,
-    );
-    addTearDown(subscription.close);
-
-    // The provider used to watch the whole song, so a play counter bump or a
-    // favourite toggle re-ran the lookup — and a result that was never cached
-    // was retried against the network every time.
+    // A play counter bump or a favourite toggle used to re-run the lookup — and
+    // a result that was never cached was retried against the network every time.
     container.read(_songsStateProvider.notifier).replace([
       song.copyWith(playCount: 3, isFavorite: true),
     ]);
-    expect(rebuilds, 0);
+    await container.read(lyricsProvider(song.id).future);
+    expect(remote.calls, 1, reason: 'a play counter is not a new question');
 
+    // A retitled track is a different question, so it is asked again.
     container.read(_songsStateProvider.notifier).replace([
       song.copyWith(title: 'Ember (Live)'),
     ]);
-    expect(rebuilds, 1);
+    await container.read(lyricsProvider(song.id).future);
+    expect(remote.calls, 2);
   });
 
   test('a definitive miss is cached so it is never asked again', () async {

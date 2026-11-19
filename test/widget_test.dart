@@ -116,6 +116,11 @@ void main() {
               height: 220,
               child: ListView(
                 scrollDirection: Axis.horizontal,
+                // A 390-wide viewport only mounts the first few tiles; the rail
+                // is a lazy ListView, so ask for enough cache to lay all five
+                // out. The last two sit past the edge, hence the finders below
+                // read past offstage.
+                scrollCacheExtent: const ScrollCacheExtent.pixels(900),
                 children: [
                   for (final title in titles)
                     SizedBox(
@@ -138,9 +143,12 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(AlbumTile), findsNWidgets(titles.length));
+    expect(
+      find.byType(AlbumTile, skipOffstage: false),
+      findsNWidgets(titles.length),
+    );
     expect(find.text('A'), findsOneWidget);
-    expect(find.text('V'), findsOneWidget);
+    expect(find.text('V', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('LjodApp renders the shell and navigation', (tester) async {

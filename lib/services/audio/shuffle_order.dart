@@ -21,8 +21,10 @@ List<int> shuffledOrder(int length, {int first = 0, Random? random}) {
   // Whatever was dealt, the current track stays where it is: enabling shuffle
   // must not interrupt what is already playing.
   final head = first.clamp(0, length - 1);
-  if (head != 0) {
-    final at = order.indexOf(head);
+  // Find where the deal put it: an out-of-range `first` clamps to 0, and 0 is
+  // not usually the first element of a shuffled order.
+  final at = order.indexOf(head);
+  if (at != 0) {
     order[at] = order[0];
     order[0] = head;
   }

@@ -185,8 +185,11 @@ class PlaybackController {
   /// Playback itself stays silent: an app that starts blasting audio on launch
   /// is a worse surprise than losing the position.
   Future<void> _restoreSession() async {
-    final store = ref.read(playbackSessionProvider);
     try {
+      // Reading the store can throw when preferences are unavailable. That must
+      // cost the saved queue, not escape before the cleanup below: without it
+      // `_suppressPlayCount` would stay true and no play would ever be counted.
+      final store = ref.read(playbackSessionProvider);
       final saved = store.read();
       if (saved == null) return;
 
@@ -220,8 +223,12 @@ class PlaybackController {
       _currentId = queue[index].id;
     } on PlaybackException catch (error) {
       ref.read(playbackErrorProvider.notifier).report(error.message);
-    } catch (_) {
-      // A stale session must never prevent startup.
+    } catch (error) {
+      // A stale or unreadable session must never prevent startup.
+      DiagnosticsLog.instance.log(
+        'session: the last queue could not be restored: $error',
+        level: DiagnosticsLevel.warning,
+      );
     } finally {
       _suppressPlayCount = false;
       _restored = true;
@@ -406,9 +413,14 @@ class PlaybackController {
   Future<void> seek(Duration position) => _guard(() => _handler.seek(position));
 
   Future<void> seekBy(Duration delta) => _guard(() async {
-    // The player's own position rather than the last broadcast one: broadcasts
-    // are throttled, and a skip button must not drift by a second.
-    final current = _lastPosition + delta;
+    // Broadcast positions are throttled, so the last tick this controller saw is
+    // the freshest position it has. Before the first tick — a paused launch, or
+    // a handler that only reports position in its state — fall back to the
+    // state, otherwise a skip computed from zero jumps to the wrong place.
+    final anchor = _lastPosition > Duration.zero
+        ? _lastPosition
+        : _handler.playbackState.value.updatePosition;
+    final current = anchor + delta;
     final duration = _handler.mediaItem.value?.duration ?? Duration.zero;
     var target = current;
     if (target < Duration.zero) target = Duration.zero;
