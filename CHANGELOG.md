@@ -48,6 +48,10 @@ All notable changes to Ljod are documented here. The format follows
 
 ### Changed
 
+- CI publishes the rolling `debug` prerelease on GitHub too, so both forges
+  offer `ljod-debug-arm64-v8a.apk` and `ljod-debug-armeabi-v7a.apk` on a `debug`
+  tag that is replaced on every push to `main`. The GitHub job previously built
+  a universal debug APK and only left it in the Actions tab, where it expired.
 - GitHub releases now attach one signed APK per phone architecture
   (`ljod-<version>-arm64-v8a.apk`, `ljod-<version>-armeabi-v7a.apk`) instead of
   the 68.7 MB universal APK, which carried every ABI's `libapp.so` and

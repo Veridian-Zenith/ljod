@@ -73,6 +73,11 @@ jobs:
     # The APK is the expensive job; only build it once the cheap checks pass.
     needs: [analyze, test]
     runs-on: ubuntu-latest
+    # Attaching the APKs to a release needs more than the default read-only
+    # token. Fork PRs are unaffected: GitHub downgrades their token anyway, and
+    # the publish step only runs for main.
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -94,14 +99,83 @@ jobs:
         run: flutter pub get
 
       # Debug signing uses the generated debug keystore, so no repository
-      # secret is involved and fork PRs work unchanged.
-      - name: Build debug APK
-        run: flutter build apk --debug
+      # secret is involved and fork PRs work unchanged. The ABIs match the
+      # release build: x86_64 exists only for emulators and would otherwise
+      # account for a third of a download no phone can use. Debug output is
+      # left unstripped on purpose — symbols are the point of a debug build.
+      - name: Build debug APKs
+        run: |
+          set -euo pipefail
+          flutter build apk --debug \
+            --split-per-abi \
+            --target-platform android-arm64,android-arm
 
-      - name: Upload debug APK
+      - name: Upload debug APKs
         uses: actions/upload-artifact@v7
         with:
           name: ljod-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          path: build/app/outputs/flutter-apk/app-*-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Artifacts only exist in the Actions tab and expire; a rolling prerelease
+      # gives the debug APKs a stable link without cutting a version tag, and
+      # re-runs replace the assets instead of piling up copies. This mirrors the
+      # Forgejo workflow, which has no artifact service and so depends on it.
+      #
+      # GitHub creates the `debug` tag on first publication, because a release
+      # has to hang off a tag. It is not `v*`, so it never triggers the release
+      # build, and the release itself keeps pointing at the first push.
+      - name: Publish debug APKs as a prerelease
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tag=debug
+          notes='Rolling debug APKs from main, one per ABI. Replaced on every push. The debug keystore signs them, so they are for testing, not for distribution.'
+
+          sources=(build/app/outputs/flutter-apk/app-*-debug.apk)
+          if [ ${#sources[@]} -eq 0 ]; then
+            echo 'The build produced no per-ABI debug APK.' >&2
+            ls -la build/app/outputs/flutter-apk >&2 || true
+            exit 1
+          fi
+
+          names=()
+          for source in "${sources[@]}"; do
+            abi="${source#*app-}"
+            abi="${abi%-debug.apk}"
+            name="ljod-debug-${abi}.apk"
+            cp "${source}" "${name}"
+            names+=("${name}")
+            echo "Prepared ${name} ($(du -h "${name}" | cut -f1))."
+          done
+          trap 'rm -f "${names[@]}"' EXIT
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" "${names[@]}" --clobber
+            gh release edit "${tag}" --prerelease \
+              --title 'Debug build' --notes "${notes}"
+          else
+            gh release create "${tag}" "${names[@]}" \
+              --prerelease \
+              --title 'Debug build' \
+              --notes "${notes}" \
+              --target "${GITHUB_SHA}"
+          fi
+
+          # The universal APK from older runs — and any ABI no longer built —
+          # must not linger beside the current pair.
+          while read -r asset; do
+            case " ${names[*]} " in
+              *" ${asset} "*) ;;
+              *)
+                echo "Removing stale asset ${asset}."
+                gh release delete-asset "${tag}" "${asset}" --yes
+                ;;
+            esac
+          done < <(gh release view "${tag}" --json assets --jq '.assets[].name')
+
+          gh release view "${tag}" --json url --jq '"Published " + .url'
