@@ -48,6 +48,10 @@ All notable changes to Ljod are documented here. The format follows
 
 ### Changed
 
+- GitHub releases now attach one signed APK per phone architecture
+  (`ljod-<version>-arm64-v8a.apk`, `ljod-<version>-armeabi-v7a.apk`) instead of
+  the 68.7 MB universal APK, which carried every ABI's `libapp.so` and
+  `libflutter.so`. `--split-debug-info` also keeps DWARF out of `libapp.so`.
 - Flutter is 3.50.0 (Dart 3.14) for CI and the documented toolchain. The album
   rail test uses `scrollCacheExtent`, which only exists from 3.50, so the
   pubspec floor moved with it instead of leaving CI on a version the tests no

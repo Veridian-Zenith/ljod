@@ -67,9 +67,10 @@ lyrics lookup are user-configurable — see [ARCHITECTURE.md](ARCHITECTURE.md).
 ### How do I get the APK?
 
 Releases are published on the
-[releases page](https://git.gay/Veridian-Zenith/ljod/releases) with a signed
-`ljod-<version>.apk`. Builds from source are covered in
-[BUILDING.md](BUILDING.md).
+[releases page](https://git.gay/Veridian-Zenith/ljod/releases) with one signed
+APK per phone architecture — `ljod-<version>-arm64-v8a.apk` and
+`ljod-<version>-armeabi-v7a.apk`. Install the arm64 one unless the device is
+32-bit only. Builds from source are covered in [BUILDING.md](BUILDING.md).
 
 ### What licence is Ljod under?
 
