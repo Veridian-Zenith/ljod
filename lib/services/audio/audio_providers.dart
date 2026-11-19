@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/song_model.dart';
 import '../library/library_providers.dart';
 import '../settings/settings_provider.dart';
@@ -120,6 +123,7 @@ class PlaybackController {
           if (!_suppressPlayCount) {
             ref.read(libraryProvider.notifier).markPlayed(song);
           }
+          _logMemory();
           _scheduleSave(immediate: true);
         });
 
@@ -157,6 +161,15 @@ class PlaybackController {
   Duration _lastPosition = Duration.zero;
   String? _currentId;
   String? _stateSignature;
+
+  /// The queue's ids, rebuilt only when the queue itself changes: encoding
+  /// fourteen hundred ids every few seconds was steady garbage on a long drive.
+  List<String>? _queueIds;
+  List<SongModel>? _queueSource;
+
+  /// Last session written, so an unchanged one is not rewritten.
+  String? _lastSessionSignature;
+  Duration _lastSavedPosition = Duration.zero;
 
   /// False until the saved session has been applied; saving before that would
   /// overwrite it with the empty startup state.
@@ -232,20 +245,41 @@ class PlaybackController {
 
   void _scheduleSave({bool immediate = false}) {
     if (!_restored) return;
-    _saveTimer?.cancel();
     if (immediate) {
-      unawaited(_persistSession());
+      _saveTimer?.cancel();
+      _saveTimer = null;
+      unawaited(_persistSession(force: true));
       return;
     }
-    // Position ticks arrive many times a second; writing at most every few
-    // seconds keeps the last position fresh without hammering preferences.
-    _saveTimer = Timer(
-      const Duration(seconds: 3),
-      () => unawaited(_persistSession()),
-    );
+    // Position ticks arrive several times a second. A pending timer already
+    // covers them; cancelling and re-creating one per tick was pure churn, and
+    // every firing rewrote the entire queue.
+    if (_saveTimer?.isActive ?? false) return;
+    _saveTimer = Timer(const Duration(seconds: 8), () {
+      _saveTimer = null;
+      unawaited(_persistSession());
+    });
   }
 
-  Future<void> _persistSession() async {
+  /// Records the resident set and the decoded-cover footprint once per track.
+  ///
+  /// "RAM climbs until the phone lags" cannot be judged from a bug report; one
+  /// line per track shows whether it is steady or growing.
+  void _logMemory() {
+    try {
+      final rss = (ProcessInfo.currentRss / (1024 * 1024)).round();
+      final covers =
+          PaintingBinding.instance.imageCache.currentSizeBytes / (1024 * 1024);
+      DiagnosticsLog.instance.log(
+        'memory: $rss MB rss, ${covers.toStringAsFixed(1)} MB decoded covers',
+        level: DiagnosticsLevel.info,
+      );
+    } catch (_) {
+      // Diagnostics must never affect playback.
+    }
+  }
+
+  Future<void> _persistSession({bool force = false}) async {
     if (!_restored) return;
     final handler = _handler;
     final base = handler.baseSongs;
@@ -257,15 +291,35 @@ class PlaybackController {
         : base.indexWhere((song) => song.id == currentId);
     if (index < 0) index = 0;
 
+    final ids = identical(base, _queueSource)
+        ? _queueIds!
+        : (_queueIds = [for (final song in base) song.id]);
+    _queueSource = base;
+
+    final shuffle = handler.shuffleEnabled;
+    final repeat = _savedRepeat(handler.playbackState.value.repeatMode);
+    final signature =
+        '$index|${ids.length}|${ids.isEmpty ? '' : ids.first}|'
+        '${ids.isEmpty ? '' : ids.last}|$shuffle|${repeat.name}';
+    final moved =
+        (_lastPosition - _lastSavedPosition).abs() >=
+        const Duration(seconds: 1);
+    // Nothing that affects a restore changed and the position barely moved: a
+    // write here would re-encode every queued id for nothing.
+    if (!force && signature == _lastSessionSignature && !moved) return;
+
+    _lastSessionSignature = signature;
+    _lastSavedPosition = _lastPosition;
+
     await ref
         .read(playbackSessionProvider)
         .write(
           PlaybackSession(
-            queue: [for (final song in base) song.id],
+            queue: ids,
             index: index,
             position: _lastPosition,
-            shuffle: handler.shuffleEnabled,
-            repeat: _savedRepeat(handler.playbackState.value.repeatMode),
+            shuffle: shuffle,
+            repeat: repeat,
           ),
         );
   }
@@ -352,7 +406,9 @@ class PlaybackController {
   Future<void> seek(Duration position) => _guard(() => _handler.seek(position));
 
   Future<void> seekBy(Duration delta) => _guard(() async {
-    final current = _handler.playbackState.value.updatePosition + delta;
+    // The player's own position rather than the last broadcast one: broadcasts
+    // are throttled, and a skip button must not drift by a second.
+    final current = _lastPosition + delta;
     final duration = _handler.mediaItem.value?.duration ?? Duration.zero;
     var target = current;
     if (target < Duration.zero) target = Duration.zero;

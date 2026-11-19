@@ -7,14 +7,17 @@ there. There is no catalogue, no account and no cloud library.
 
 ### Does it work offline?
 
-Completely. The only network feature is the opt-in LRCLIB lyrics lookup; with it
-off, Ljod makes no requests at all.
+Playback, indexing and sidecar or embedded lyrics do. Album artwork needs a
+connection: covers are looked up by artist and album name (Deezer, then the
+iTunes catalogue) and kept as a link. Offline, tracks still list and play and
+tiles show initials. The LRCLIB lyrics lookup is opt-in and off by default.
 
 ### What audio formats are supported?
 
 Whatever the platform decoder and `just_audio` handle on your device — typically
 MP3, AAC/M4A, FLAC, OGG/Vorbis, Opus and WAV. Tag and cover reading goes through
-`audio_metadata_reader`, so ID3v2, Vorbis comments and MP4 atoms are understood.
+Tag reading goes through `audio_metadata_reader`, so ID3v2, Vorbis comments and
+MP4 atoms are understood.
 
 ### Which Android versions?
 
@@ -37,8 +40,8 @@ timestamps are used when present.
 ### Why did a track show "no lyrics" and never retry?
 
 Lookups are cached deliberately, including negative results, so a library scan
-does not hammer LRCLIB. Use **Refresh** in the lyrics sheet, or clear the lyrics
-cache in Settings, to retry.
+does not hammer LRCLIB. Use **Refresh** in the lyrics sheet, or refresh the
+lyrics cache in Settings → Caches, to retry.
 
 ### Is my listening data uploaded anywhere?
 

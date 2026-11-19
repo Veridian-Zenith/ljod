@@ -392,7 +392,7 @@ class _Hero extends StatelessWidget {
                   permissionDenied
                       ? 'Ljod needs access to audio files to build your library.'
                       : isScanning
-                      ? 'Indexing tags and cover art right now.'
+                      ? 'Indexing tags right now.'
                       : 'Choose a track and the forge will light up.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: LjodTheme.textMuted,
@@ -577,7 +577,8 @@ class _SongRail extends StatelessWidget {
             child: AlbumTile(
               title: song.title,
               subtitle: song.displayArtist,
-              artworkPath: song.artworkPath,
+              artist: song.displayArtist,
+              album: song.album,
               onTap: () => onPlay(song, songs),
               badge: song.isFavorite ? 'Pinned' : null,
             ),

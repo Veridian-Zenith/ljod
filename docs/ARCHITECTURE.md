@@ -19,7 +19,7 @@ lib/
 │   └── widgets/               reusable VZ components, logo
 ├── services/                  state + platform work
 │   ├── audio/                 just_audio + audio_service handler
-│   ├── library/               scan, artwork cache, providers
+│   ├── library/               scan, artwork lookup, providers
 │   ├── lyrics/                sidecar/embedded/LRCLIB resolution + cache
 │   ├── settings/              persisted preferences
 │   └── stats/                 derived listening statistics
@@ -65,7 +65,7 @@ library and lyrics state are `AsyncNotifier`s built on the services below.
 ```
 MediaStore (Android)  ──┐
 desktop folders       ──┴─▶ raw tracks ─▶ FolderScope filter ─▶ isolate enrich ─▶ SQLite upsert
-                                                                 (tags, artwork)
+                                                                 (tags)          └─▶ folder tally
 ```
 
 * **Source.** On Android a thin `MethodChannel('dev.vz.ljod/media')` bridge
@@ -75,83 +75,80 @@ desktop folders       ──┴─▶ raw tracks ─▶ FolderScope filter ─�
 * **Filtering.** `FolderScope` applies `all` / `only` / `exclude` rules
   recursively — selecting `/Music/Rock` also covers `/Music/Rock/Live`.
   `content://` paths expose no folder, so those tracks are always kept.
-* **Enrichment.** Tag and cover extraction runs in a background isolate
-  (`compute`) in batches, and only the current batch's known-artwork map crosses
-  the isolate boundary.
+* **Enrichment.** Tag reading runs in a background isolate (`compute`) in
+  batches. No image bytes are decoded or written: covers are resolved later, per
+  album, when a tile is painted.
 * **Persistence.** `upsertSongs` writes metadata only; `isFavorite`,
   `playCount` and `lastPlayedMs` are deliberately excluded from the update so a
   rescan never erases listening state.
+* **One pass.** The rows the scan already holds also produce the folder tally
+  that folder rules list, plus counts of what could not be read: files missing
+  while their tags were read, unreadable tags, unreadable desktop folders,
+  platform rows without a path, and the 5000-file desktop ceiling. A completed
+  scan leaves no follow-up platform query behind; `upsertSongs` also writes the
+  legacy `artworkPath` column, so no separate table-wide UPDATE is needed.
+* **Logging.** A scan writes `scan: started`, one summary line (tracks, albums,
+  artists, folders, total minutes, elapsed ms) and a `WARN` per count above
+  zero, then the `artwork:` line that records covers resolving online.
+* **Per-item refresh.** Settings → Caches re-runs one cache at a time: artwork
+  lookups drop the URL memo, cached lyrics drop stored answers, and Rescan
+  device rebuilds the index. A single bad cache never needs a full scan.
 
 ### Database
 
-`ljod_library.db` in the application documents directory, schema version 3:
+`ljod_library.db`, schema version 4, in the first directory that answers:
 
 | Table | Purpose |
 | --- | --- |
-| `songs` | library cache: id, path, title, artist, album, albumArtist, durationMs, trackNumber, artworkPath, isFavorite, playCount, lastPlayedMs, addedAtMs |
+| `songs` | library cache: id, path, title, artist, album, albumArtist, durationMs, trackNumber, isFavorite, playCount, lastPlayedMs, addedAtMs (plus the legacy `artworkPath` column, no longer written) |
+| `artwork_urls` | albumKey, url, fetchedAtMs — the online cover memo |
 | `playlists` | id, name, createdAt |
 | `playlist_songs` | playlistId, songId, position |
 
+A folder that already holds `ljod_library.db` wins; otherwise the order is the
+app documents folder, sqflite's own databases folder, then the app support
+folder. A regression in whichever plugin answers for directories therefore moves
+the file (and logs it) instead of leaving the app with no library, and a folder
+that starts answering again cannot strand the library in another one.
+
+Directories themselves are answered by the app's own channel,
+`dev.vz.ljod/paths` (`lib/core/platform/app_paths.dart` and `MainActivity`),
+installed as `PathProviderPlatform.instance`. `path_provider_android` 2.3.1
+resolves paths through `package:jni`, and with `jni` 1.2.0 its generated bindings
+ask the JVM for a class literally named `Landroid/content/Context;`: they were
+produced by jnigen 0.16, which emits no `className`, and `JType.jClass` falls
+back to the type signature. Both packages are the current releases, so the app
+answers the same directories itself — documents is `getDir("flutter")`, support
+is `filesDir`, cache is `cacheDir` — and `just_audio`'s asset cache and
+`audio_service`'s cache manager go through that instance as well.
+
 Indexes exist on `title`, `artist` and `album`. The library is a rebuildable
-cache, so a schema bump drops and recreates the tables rather than migrating.
+cache, so a bump of its schema drops and recreates the tables rather than
+migrating; the artwork memo is added in place, since it holds only URLs.
 
 ### Artwork
 
-Covers are written to `<app support>/artwork`, one file per unique picture, so
-tracks from one album share a file. A cover is looked up in this order:
+Cover art is not stored on the device. Each album's cover is resolved online
+when it is first painted and remembered as a URL in `artwork_urls` — one row of
+text per album, holding either the URL or a "none found" mark that is retried
+after 14 days. That memo is why the second paint is free and why a library can
+show covers on every screen without a byte of image data being written.
 
-1. the previously extracted file, when it still exists (no re-read on rescans);
-2. the picture embedded in the track's tags, read in the scan isolate;
-3. an image beside the track — `cover`, `folder`, `front`, `album`, `albumart`,
-   `albumartsmall`, `artwork`, `thumb`, or the track's own file name, in JPEG,
-   PNG, WebP, GIF or BMP, matched case-insensitively;
-4. on Android, `MediaMetadataRetriever` from the track's content URI, which also
-   covers files the isolate cannot open and MediaStore's generated thumbnail.
+Deezer's public API is asked first, because it needs no key and serves 1000 px
+covers; the iTunes Search API is the fallback, upscaled from its 100 px
+thumbnail to 600 px. Lookups are keyed by normalized artist + album (the track
+title when the album tag is missing) and pass through a three-request throttle,
+so an album grid cannot burst either API. `Image.network` paints the result and
+Flutter's in-memory image cache bounds what is decoded. An album the catalogues
+do not know shows initials, and Settings → Caches → Artwork lookups refreshes
+every answer so it is asked again.
 
-On Android a cover is cached in two steps. The extraction pass accepts the raw
-picture up to 24 MiB and writes it as it came from the tag; a downscaling pass
-right after re-encodes it through the platform decoder (`BitmapFactory`) as a
-1024 px JPEG, caches the result under its content hash, and lets the scan prune
-the full-size original. Without that pass a library of 2000×2000 PNG covers
-reached 1.46 GB for 1064 tracks, and covers over the 4 MiB ceiling were refused
-before they were ever downscaled — 680 of 1744 tagged tracks showed no artwork
-because of it. Elsewhere (desktop) nothing downscales, so a cover above 4 MiB is
-skipped rather than stored.
-
-The service reports total usage so Settings can show it, and each scan logs how
-many tracks got a cover per source, counting only files that still exist.
-Clearing the artwork cache also nulls `artworkPath` so the next scan
-re-extracts.
-
-Stored paths are verified against the filesystem when the library loads and
-before each scan. That check is necessary because `upsertSongs` keeps an
-existing path when a scan produces no art for a track (`COALESCE`), so without
-it a path that outlived its file could never be corrected — the row would keep
-pointing at a deleted cover forever, and every tile would fail to decode.
-
-Trimming never deletes a cover the library still references. It did once, to
-hold the directory under a byte budget: the scan extracted hundreds of covers,
-the trim cut them back to the budget, and the database then forgot every path
-that was deleted, so most tracks lost their art again. A cover can only be
-recreated by reading its audio file, so the budget now applies to unreferenced
-leftovers only, and a library's artwork is allowed to use the space it needs.
-
-Every write re-creates the directory if it is missing: clearing a cache deletes
-it, and a write that assumed it still existed failed silently, which meant no
-cover could ever return. Orphan pruning is skipped when a scan cannot name a
-single referenced cover, and covers the database still references are always
-kept, so a scan that fails to read tags cannot discard art the library points
-at.
-
-Covers paint wherever artwork appears — rows, grids, rails, the queue, the mini
-player and the full-screen player — always through `CoverArt`, which decodes at
-the size the widget actually paints (`cacheWidth`/`cacheHeight`, capped at
-1024 px). Decoding a 2000×2000 cover for a 54 px row was what made scrolling
-churn the image cache, and that cost is now bounded per tile. A cover that
-cannot be decoded paints the designed initials fallback and writes one
-`artwork: could not decode …` line to Diagnostics, so a missing file is not
-indistinguishable from an untagged one. The media notification is unaffected —
-it points at the cached file through the `MediaItem`'s `artUri`.
+An earlier design extracted embedded and sidecar pictures into
+`<app support>/artwork`. For 1064 tracks that directory reached 1.46 GB, covers
+over the 4 MiB ceiling were dropped before they were ever written, and the
+scan's own eviction could delete art the library still pointed at. The scan now
+deletes that directory if an older build left one behind, and no code path
+writes cover images any more.
 
 ## Playback
 
@@ -177,7 +174,16 @@ Notification behaviour is deliberate:
 * the service stays foreground when paused, so a media-button resume is not
   blocked by Android's background-start restrictions;
 * the notification is therefore dismissible (`androidNotificationOngoing: false`);
-* artwork is downscaled to 512 px before it reaches the notification.
+* the notification carries no cover: artwork is a URL painted by the app, and
+the media session is not handed a network image.
+
+Playback keeps a fixed working set. A queue entry becomes one `MediaItem`, not
+three, the image cache is capped at 48 MiB, a session is not rewritten when
+nothing about it changed, and a state broadcast carries a real change
+immediately while a position-only tick goes out at most once a second (the media
+session interpolates the position itself). Diagnostics records
+`memory: N MB rss, M MB decoded covers` per track, so growth across a long
+session is visible instead of guessed at.
 
 ## Lyrics
 
@@ -211,11 +217,9 @@ the next launch and then deleted. Settings → Diagnostics can copy or clear it.
 
 | Limit | Value | Where |
 | --- | --- | --- |
-| Image cache | 120 entries / 96 MiB | `main.dart` |
+| Image cache | 60 entries / 48 MiB | `main.dart` |
 | Diagnostics log | 128 KiB | `DiagnosticsLog.maxBytes` |
-| Artwork file | 4 MiB (Android: downscaled to 1024 px first) | `ArtworkCache.maxFileBytes` |
-| Artwork raw input | 24 MiB, Android only | `LibraryService._maxRawArtworkBytes` |
-| Artwork disk budget | 192 MiB (unreferenced files only) | `ArtworkCache.defaultBudgetBytes` |
+| Artwork memo | one text row per album | `artwork_urls` (SQLite) |
 | Lyrics disk budget | 6 MiB | `LyricsService` |
 | Lyrics memory LRU | 32 entries | `LyricsService` |
 | LRCLIB timeouts | 6 s connect / 8 s receive | `LrclibRemote` |

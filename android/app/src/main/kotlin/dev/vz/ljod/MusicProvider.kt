@@ -156,40 +156,6 @@ class MusicProvider(private val context: Context) {
         return output
     }
 
-    /**
-     * Re-encodes [files] at display size and returns source -> new file.
-     *
-     * Tag and sidecar art was cached byte-for-byte, so a library of full-size
-     * PNG covers grew past a gigabyte, while the Dart cache ceiling refused the
-     * largest ones outright. The platform decoder reads every format the tag
-     * reader can hand over (JPEG, PNG, WebP, GIF, BMP), so one pass here makes
-     * the cache small and keeps those covers instead of losing them.
-     */
-    fun shrinkArtwork(
-        targetDir: String,
-        files: List<String>
-    ): Map<String, String> {
-        val output = mutableMapOf<String, String>()
-        val directory = File(targetDir).apply { mkdirs() }
-
-        files.forEachIndexed { index, path ->
-            try {
-                val source = File(path)
-                if (!source.exists() || source.length() == 0L) {
-                    return@forEachIndexed
-                }
-                val shrunk = shrink(source.readBytes()) ?: return@forEachIndexed
-                val file = File(directory, "$index-${System.nanoTime()}.img")
-                file.writeBytes(shrunk)
-                output[path] = file.path
-            } catch (_: Throwable) {
-                // Leave the original cover in place rather than losing it.
-            }
-        }
-
-        return output
-    }
-
     /** MediaStore's generated art for [uri], or null when there is none. */
     private fun thumbnailBytes(uri: String): ByteArray? {
         return try {

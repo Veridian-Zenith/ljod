@@ -21,7 +21,7 @@ android {
     /**
      * Pinned instead of inherited from Flutter so the app, the plugins and CI all
      * name one revision. The `jni` plugin compiles native code with
-     * `flutter.ndkVersion`, which is 28.2.13676358 on Flutter 3.47.9, and a
+     * `flutter.ndkVersion`, which is 28.2.13676358 on Flutter 3.50, and a
      * project NDK lower than a plugin's fails Flutter's version check.
      *
      * Bump this together with the `ndk;` package in the three workflows: the

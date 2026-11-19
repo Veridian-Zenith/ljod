@@ -11,21 +11,6 @@ import '../../core/widgets/vz_components.dart';
 class InfoScreen extends StatelessWidget {
   const InfoScreen({super.key});
 
-  static const List<String> _formats = [
-    'MP3',
-    'FLAC',
-    'AAC / M4A',
-    'MP4',
-    'OGG',
-    'OPUS',
-    'WAV',
-    'AIFF',
-    'WMA',
-    'APE',
-    'MPC',
-    'WavPack',
-  ];
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -50,15 +35,63 @@ class InfoScreen extends StatelessWidget {
                 title: 'Supported formats',
                 eyebrow: 'Formats',
                 subtitle:
-                    'Indexed by extension and read through the platform '
-                    'decoder',
+                    'What your device decodes, what Ljod decodes itself, and '
+                    'what it can only list',
                 padding: EdgeInsets.zero,
               ),
               const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [for (final format in _formats) _Pill(format)],
+              const Panel(
+                child: Column(
+                  children: [
+                    _FormatGroup(
+                      icon: Icons.memory_rounded,
+                      title: 'Your device — hardware or system codec',
+                      text:
+                          'Android decodes these, usually on the audio DSP, so '
+                          'they cost the least battery. Which exact formats a '
+                          'phone exposes is up to its codec set.',
+                      formats: [
+                        'MP3',
+                        'AAC',
+                        'M4A / MP4',
+                        'FLAC',
+                        'OGG VORBIS',
+                        'OPUS',
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    _FormatGroup(
+                      icon: Icons.developer_board_rounded,
+                      title: 'Ljod — bundled software decoders',
+                      text:
+                          'Shipped with the player and used when the device has '
+                          'no matching codec or refuses the file layout. Works '
+                          'on any phone, at the cost of CPU.',
+                      formats: ['WAV', 'FLAC', 'ALAC', 'OPUS', 'VORBIS'],
+                    ),
+                    SizedBox(height: 16),
+                    _FormatGroup(
+                      icon: Icons.block_rounded,
+                      title: 'Indexed, but no decoder',
+                      text:
+                          'Android can list these files, so they may be indexed, '
+                          'but neither the device nor Ljod can decode them. '
+                          'Playing one fails — convert it to FLAC or MP3 to hear '
+                          'it here.',
+                      formats: ['AIFF', 'WMA', 'APE', 'MPC', 'WAVPACK'],
+                    ),
+                    SizedBox(height: 16),
+                    _InfoRow(
+                      icon: Icons.text_snippet_rounded,
+                      title: 'Tags and metadata',
+                      text:
+                          'ID3v2 in MP3, Vorbis comments in FLAC, OGG and Opus, '
+                          'and MP4 atoms in M4A are read locally, so titles, '
+                          'artists, albums and track numbers come from the file '
+                          'itself.',
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 24),
               const SectionHeader(
@@ -74,11 +107,10 @@ class InfoScreen extends StatelessWidget {
                       icon: Icons.image_rounded,
                       title: 'Cover art',
                       text:
-                          'Embedded pictures are copied into a local cache, one '
-                          'file per unique picture, at most 4 MiB each. A folder '
-                          'image beside the track (cover, folder, front) is used '
-                          'when the tags have none. Only the full-screen player '
-                          'decodes them, so long lists stay smooth.',
+                          'Covers are looked up per album by artist and album '
+                          'name, remembered as a link and painted at the size of '
+                          'the tile. Nothing is extracted to disk, and an album '
+                          'the catalogues do not know shows initials.',
                     ),
                     SizedBox(height: 14),
                     _InfoRow(
@@ -167,6 +199,13 @@ class InfoScreen extends StatelessWidget {
                       'the answer is cached on this device.',
                       style: theme.textTheme.bodySmall,
                     ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Album artwork is looked up by artist and album name '
+                      '(Deezer, then Apple’s iTunes catalogue) and the link is '
+                      'stored on this device.',
+                      style: theme.textTheme.bodySmall,
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -202,7 +241,8 @@ class InfoScreen extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Built with Flutter. All data stays on this device.',
+                        'Built with Flutter. Your library, audio and settings '
+                        'stay on this device.',
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
@@ -241,6 +281,39 @@ class _Pill extends StatelessWidget {
           color: LjodTheme.textSoft,
         ),
       ),
+    );
+  }
+}
+
+class _FormatGroup extends StatelessWidget {
+  const _FormatGroup({
+    required this.icon,
+    required this.title,
+    required this.text,
+    required this.formats,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+  final List<String> formats;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _InfoRow(icon: icon, title: title, text: text),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 28),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [for (final format in formats) _Pill(format)],
+          ),
+        ),
+      ],
     );
   }
 }

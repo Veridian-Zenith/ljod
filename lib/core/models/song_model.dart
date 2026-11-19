@@ -32,10 +32,12 @@ class SongModel {
   final Duration duration;
   final int trackNumber;
 
-  /// Cached cover art on disk. Embedded art is extracted during a library scan.
+  /// Legacy cover file from builds that extracted artwork to disk.
   ///
-  /// Empty means the cache was cleared for this track; treat it exactly like
-  /// null wherever it is consumed.
+  /// Nothing writes this any more — covers are resolved online and stored as a
+  /// URL per album — so it is only ever non-null for a library indexed by an
+  /// older version, and it is cleared on the first scan. Empty means "no art";
+  /// treat it exactly like null wherever it is consumed.
   final String? artworkPath;
 
   final bool isFavorite;

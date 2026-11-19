@@ -1,6 +1,4 @@
-import 'dart:async';
-import 'dart:io';
-
+import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/app_database.dart';
@@ -8,6 +6,7 @@ import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/song_model.dart';
 import '../settings/settings_provider.dart';
 import 'library_service.dart';
+import 'online_artwork.dart';
 
 /// Coarse stage of a library scan, used by the global status bar.
 enum ScanPhase { idle, permission, querying, reading, saving, done }
@@ -46,8 +45,8 @@ class LibraryState {
     ScanPhase.querying => 'Finding audio files',
     ScanPhase.reading =>
       scanTotal <= 0
-          ? 'Reading tags and artwork'
-          : 'Reading tags and artwork · $scanProcessed/$scanTotal',
+          ? 'Reading tags'
+          : 'Reading tags · $scanProcessed/$scanTotal',
     ScanPhase.saving => 'Saving library',
     ScanPhase.done => 'Library up to date',
     ScanPhase.idle => isScanning ? 'Scanning library' : 'Idle',
@@ -94,11 +93,32 @@ final libraryProvider = AsyncNotifierProvider<LibraryNotifier, LibraryState>(
   LibraryNotifier.new,
 );
 
-/// Folders that currently contain audio. Invalidated after every completed
-/// scan, and on demand by the folder-rules screen.
+/// Folder counts published by the last scan.
+///
+/// The scan already walks every file, so its folder tally is reused rather than
+/// asking the platform a second time. [ScannedFolders.clear] drops it when a
+/// fresh query is genuinely wanted.
+final scannedFoldersProvider =
+    NotifierProvider<ScannedFolders, List<AudioFolder>?>(ScannedFolders.new);
+
+class ScannedFolders extends Notifier<List<AudioFolder>?> {
+  @override
+  List<AudioFolder>? build() => null;
+
+  void publish(List<AudioFolder> folders) => state = folders;
+
+  void clear() => state = null;
+}
+
+/// Folders that currently contain audio.
+///
+/// Instant after a scan. The platform is queried only before the first scan of
+/// a session, or after the folder-rules screen asks for a reload.
 final libraryFoldersProvider = FutureProvider<List<AudioFolder>>((ref) {
-  // Re-read when a scan completes, but not on every progress tick.
+  // Rebuild when a scan completes, but not on every progress tick.
   ref.watch(libraryProvider.select((value) => value.value?.lastScan));
+  final scanned = ref.watch(scannedFoldersProvider);
+  if (scanned != null) return scanned;
   return ref.read(libraryServiceProvider).listFolders();
 });
 
@@ -119,50 +139,19 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
   Future<LibraryState> build() async {
     // Startup must never block on permission prompts or background scanning.
     // The setup flow (or an explicit Rescan) owns the first scan.
-    final songs = await _db.allSongs();
-
-    // A stored path can outlive its file: the artwork directory may be removed
-    // outside the app, and `upsertSongs` keeps the old path with COALESCE when a
-    // scan produces no art for a track. Nothing checked those paths, so the
-    // library rendered rows pointing at files that were gone and every tile
-    // logged a decode failure — artwork looked permanently broken even though
-    // the files it came from were fine. One stat per row here, then the dead
-    // paths are forgotten and a scan re-extracts them.
-    final dead = <String>{};
-    final verified = <SongModel>[];
-    for (final song in songs) {
-      final path = song.artworkPath;
-      if (path == null || path.isEmpty || File(path).existsSync()) {
-        verified.add(song);
-        continue;
-      }
-      dead.add(path);
-      verified.add(song.copyWith(clearArtwork: true));
-    }
-    if (dead.isNotEmpty) {
-      unawaited(_repairMissingArtwork(dead));
-    }
-    return _published ?? LibraryState(songs: verified);
-  }
-
-  /// Forgets artwork paths whose files are gone, then re-extracts the covers.
-  ///
-  /// Running the scan keeps this self-healing: the row is now empty, so the
-  /// scan finds no path to reuse and reads the art again. It asks for no
-  /// permission — a startup repair must never pop a dialog — and does nothing
-  /// when music access is missing or a scan is already underway.
-  Future<void> _repairMissingArtwork(Set<String> dead) async {
-    DiagnosticsLog.instance.log(
-      'artwork: ${dead.length} cached cover(s) were missing; re-extracting',
-      level: DiagnosticsLevel.warning,
-    );
     try {
-      await _db.clearArtworkPathsFor(dead);
-    } catch (_) {
-      // The library still renders with the paths stripped in memory.
+      final songs = await _db.allSongs();
+      return _published ?? LibraryState(songs: songs);
+    } catch (error) {
+      // Without this, an unopenable database looked exactly like an empty
+      // library: the failure surfaced as a bare platform error far from
+      // anything that named the database.
+      DiagnosticsLog.instance.log(
+        'library: could not read the database, so no tracks can be shown: '
+        '$error',
+      );
+      rethrow;
     }
-    if (!ref.mounted || _current.isScanning) return;
-    await rescan(requestPermission: false);
   }
 
   LibraryState get _current => state.value ?? const LibraryState();
@@ -192,6 +181,10 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
             ? await _service.requestPermission()
             : await _service.hasPermission();
         if (!granted) {
+          DiagnosticsLog.instance.log(
+            'scan: not started, music access was not granted',
+            level: DiagnosticsLevel.warning,
+          );
           _publish(
             _current.copyWith(
               isScanning: false,
@@ -205,22 +198,11 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
 
       _publish(_current.copyWith(scanPhase: ScanPhase.querying));
       final scope = ref.read(settingsProvider).folderScope;
-      final knownArtwork = await _db.artworkPaths();
-      // Drop paths whose files are gone before the scan, not just when reusing
-      // them: `upsertSongs` preserves an existing path when a scan finds no
-      // artwork (COALESCE), so a dead path would otherwise survive every scan.
-      final deadKnown = <String>{};
-      knownArtwork.removeWhere((id, path) {
-        if (File(path).existsSync()) return false;
-        deadKnown.add(path);
-        return true;
-      });
-      if (deadKnown.isNotEmpty) {
-        await _db.clearArtworkPathsFor(deadKnown);
-      }
+      // No pre-scan path clearing: `upsertSongs` writes `artworkPath` (always
+      // null now) for every row it touches, so a table-wide UPDATE first would
+      // only walk the same rows twice.
       final scanned = await _service.scan(
         scope: scope,
-        knownArtwork: knownArtwork,
         onProgress: (processed, total) {
           if (!ref.mounted) return;
           _publish(
@@ -248,10 +230,10 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
       } else {
         await _db.removeMissing(scanned.songs.map((song) => song.id).toSet());
       }
-      // Covers the artwork budget had to evict are no longer on disk, so forget
-      // their paths instead of leaving rows that point at nothing.
-      await _db.clearArtworkPathsFor(scanned.evictedArtwork);
       final songs = await _db.allSongs();
+      if (!ref.mounted) return;
+      // The scan's own folder tally is what folder rules show from now on.
+      ref.read(scannedFoldersProvider.notifier).publish(scanned.folders);
       _publish(
         LibraryState(
           songs: songs,
@@ -271,6 +253,7 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
         ),
       );
     } on LibraryScanException catch (error) {
+      DiagnosticsLog.instance.log('scan failed: ${error.message}');
       _publish(
         _current.copyWith(
           isScanning: false,
@@ -279,6 +262,7 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
         ),
       );
     } catch (error) {
+      DiagnosticsLog.instance.log('scan failed: $error');
       _publish(
         _current.copyWith(
           isScanning: false,
@@ -326,17 +310,34 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
   }
 
   Future<void> clearCache() async {
+    DiagnosticsLog.instance.log(
+      'library: clearing the indexed cache and derived files',
+      level: DiagnosticsLevel.info,
+    );
     await _db.clear();
     await _service.clearCaches();
     if (!ref.mounted) return;
+    ref.read(scannedFoldersProvider.notifier).clear();
     state = const AsyncData(LibraryState());
   }
 
-  /// Deletes cached cover art only; the indexed library stays usable (covers
-  /// fall back to initials until the next scan extracts them again).
-  Future<void> clearArtworkCache() async {
+  /// Forgets every remembered cover link and deletes the cover files older
+  /// builds left behind, which also returns their space to the device.
+  ///
+  /// Nothing is lost: artwork is looked up again the next time it is painted.
+  Future<void> clearArtworkLookups() async {
     await _service.clearArtworkCache();
     await _db.clearArtworkPaths();
+    await ref.read(onlineArtworkServiceProvider).clear();
+    // Visible tiles still hold the old URL in a cached provider and the old
+    // bitmap in the image cache; without both, the button would look like it
+    // did nothing until the app restarted.
+    ref.invalidate(artworkUrlProvider);
+    try {
+      PaintingBinding.instance.imageCache.clear();
+    } catch (_) {
+      // Nothing to drop when no frame has been painted.
+    }
     if (!ref.mounted) return;
     state = AsyncData(
       _current.copyWith(
@@ -347,16 +348,6 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
     );
   }
 }
-
-/// Bytes used by cached cover art, for the storage row in Settings.
-///
-/// Recomputed after every scan so the figure matches what the cache actually
-/// holds, and left alone during a scan to avoid walking the directory on every
-/// progress tick.
-final artworkCacheBytesProvider = FutureProvider<int>((ref) async {
-  ref.watch(libraryProvider.select((value) => value.value?.lastScan));
-  return ref.read(libraryServiceProvider).artworkCacheBytes();
-});
 
 /// The full library once loaded. Empty while the first scan is running.
 final songsProvider = Provider<List<SongModel>>((ref) {

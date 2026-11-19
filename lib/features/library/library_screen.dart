@@ -175,7 +175,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         name: 'All albums',
                         count: state.songs.length,
                         selected: _albumFilter == null,
-                        artworkPath: null,
                         allTile: true,
                         onTap: () => setState(() => _albumFilter = null),
                       );
@@ -184,7 +183,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     return _AlbumChip(
                       name: entry.key,
                       count: entry.value.length,
-                      artworkPath: entry.value.first.artworkPath,
+                      artist: entry.value.first.displayArtist,
                       selected: _albumFilter == entry.key,
                       onTap: () => setState(
                         () => _albumFilter = _albumFilter == entry.key
@@ -230,8 +229,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     ? 'No tracks in “$album” match the current filter.'
                     : _filter == 1
                     ? 'Tap the heart on any track to keep it close.'
-                    : 'Grant music access and Ljod will index every supported '
-                          'audio file on the device.',
+                    : state.permissionDenied
+                    ? 'Grant music access and Ljod will index every supported '
+                          'audio file on the device.'
+                    : 'No audio was found in the folders your rules allow. Check '
+                          'folder rules in Settings, or scan again.',
                 action: album != null
                     ? TextButton(
                         onPressed: () => setState(() => _albumFilter = null),
@@ -266,7 +268,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   return AlbumTile(
                     title: song.title,
                     subtitle: song.displayArtist,
-                    artworkPath: song.artworkPath,
+                    artist: song.displayArtist,
+                    album: song.album,
                     badge: song.isFavorite ? 'Pinned' : null,
                     onTap: () => controller.playSong(song, queue: songs),
                   );
@@ -304,7 +307,7 @@ class _AlbumChip extends StatelessWidget {
     required this.count,
     required this.selected,
     required this.onTap,
-    this.artworkPath,
+    this.artist = '',
     this.allTile = false,
   });
 
@@ -312,7 +315,7 @@ class _AlbumChip extends StatelessWidget {
   final int count;
   final bool selected;
   final VoidCallback onTap;
-  final String? artworkPath;
+  final String artist;
   final bool allTile;
 
   @override
@@ -346,8 +349,10 @@ class _AlbumChip extends StatelessWidget {
                         color: selected ? LjodTheme.amber : LjodTheme.textMuted,
                       ),
                     )
-                  : CoverArt(
-                      path: artworkPath,
+                  : NetworkCover(
+                      artist: artist,
+                      album: name,
+                      title: name,
                       size: 90,
                       radius: 0,
                       label: name,

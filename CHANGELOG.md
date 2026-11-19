@@ -6,6 +6,72 @@ All notable changes to Ljod are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-19
+
+### Fixed
+
+- The `ClassNotFoundException: Didn't find class "Landroid/content/Context;"`
+  crash is fixed. `path_provider_android` 2.3.1 asks `package:jni` for that
+  class, whose bindings were generated without a `className`, so jni 1.2.0
+  falls back to the type signature. Both are the latest releases, so Android
+  directories are now answered by the app's own channel and registered as
+  `PathProviderPlatform.instance`; `just_audio`'s asset cache and the artwork
+  cache manager use the same paths, and nothing in the app touches that bridge
+  any more.
+- The library can no longer vanish behind a directory fault. The database path
+  comes from the folder that already holds `ljod_library.db`, otherwise the
+  first of the documents folder, sqflite's own databases folder and the support
+  folder that resolves, so a regression in one plugin costs a path instead of
+  the whole library, and a database that cannot be read is named in Diagnostics
+  instead of looking like an empty library.
+- Setup can no longer sit on "Building your library" for a library that is
+  already indexed: replaying it reports the existing tracks, and **Try again**
+  always starts a scan instead of being skipped because the old library was
+  still present.
+- Folder rules saved during setup are applied. The scan that should follow was
+  skipped whenever the library was not empty, so new rules looked ignored.
+- The last setup step reports what actually happened: a scan that finds nothing
+  names the supported formats and offers folder rules plus a rescan, a failed
+  scan says the library was left unchanged and offers a retry, and missing
+  access offers app settings beside the permission request.
+- Access granted from Android settings is picked up as soon as the app
+  resumes, so the access step no longer waits for a second tap.
+- Settings no longer keeps a "Scanning" row after a scan finishes, and the
+  library's empty state no longer asks for access that was already granted.
+
+### Added
+
+- **Settings → Caches** re-runs one cache at a time. Artwork lookups and cached
+  lyrics each have their own refresh — with the count they dropped written to
+  Diagnostics — so a single bad answer no longer needs a full library rescan to
+  clear it.
+
+### Changed
+
+- The Android toolchain is on its current releases: Gradle 9.9.1 (wrapper, both
+  distribution checksums updated), AGP 9.5.1 on the new AGP DSL with the legacy
+  opt-out removed. Kotlin stays 2.4.21 — the latest stable, since 2.5.0 is only
+  a release candidate.
+- Builds run on one predictable JVM: daemon JVM criteria pin Gradle to a JDK 21
+  from Adoptium (so `JAVA_HOME` or Android Studio's bundled JBR no longer decide
+  it), the Kotlin daemon is capped at 1 GiB instead of inheriting the Gradle
+  heap, workers are capped at four, and a daemon idles out after ten minutes
+  instead of three hours.
+- Dependencies are on their current releases with no version pins — `jni`
+  1.2.0, `material_ui` 1.11, `riverpod` 3.5, `sqflite` 2.4.6 and the rest — and
+  `pubspec.yaml` carries no overrides.
+- A library scan is one pass again. The rows it already holds produce the folder
+  list that folder rules show, so opening folder rules no longer repeats the
+  platform query over every file, and the table-wide cover-path UPDATE before
+  each scan is gone (the upsert already writes that column).
+- Scan logging reports the whole picture instead of a track count: one line with
+  tracks, albums, artists, folders, total minutes and elapsed time, plus a
+  warning for each missing file, unreadable tag, unreadable folder, pathless
+  platform row and the desktop 5000-file ceiling.
+- Setup lists artwork lookups alongside the optional lyrics lookup instead of
+  promising that artwork stays on the device, and describes the scan as reading
+  tags rather than tags and artwork.
+
 ## [0.4.0] — 2026-11-05
 
 ### Added
@@ -21,48 +87,22 @@ All notable changes to Ljod are documented here. The format follows
   shuffle and repeat come back paused, so the mini player and the full player
   resume where they were.
 
-### Fixed
+### Changed
 
-- Cover art is downscaled on Android before it is cached, so the artwork
-  directory no longer grows to gigabytes. Applies to embedded art, sidecar
-  images and platform extraction alike; the full-size original is pruned after
-  the 1024 px JPEG is written. Covers large enough to hit the old 4 MiB ceiling
-  are now accepted and shrunk instead of being dropped, which is why so many
-  tagged tracks had no artwork.
-- A song row can no longer keep pointing at a cover file that no longer exists.
-  Opening the app with such rows showed no artwork and logged a decode failure
-  per track; rescans could not repair them either, because the upsert preserved
-  the old path. Stored paths are now checked once at load and before every scan,
-  the dead ones are forgotten, and a background scan re-extracts those covers
-  without asking for permission.
-- Extracted covers are no longer thrown away by the artwork cache. Trimming cut
-  the directory back to a 192 MiB budget *including* covers the library pointed
-  at, and every deleted path was then cleared in the database, so a scan could
-  extract hundreds of covers and still leave most tracks with no art. Trimming
-  now only removes files nothing references; a multi-megabyte artwork library is
-  allowed to keep its covers. The diagnostics line counts only files that are
-  actually on disk, so its number matches what the app shows.
-- Artwork is visible everywhere, not just in the full-screen player. Every list,
-  grid, rail, queue row and the mini player left `CoverArt.showArtwork` at its
-  default of `false`, so a cached cover was replaced by the initials tile no
-  matter how well the extraction worked. Decoding is capped to the painted size,
-  so showing covers in lists does not reintroduce the scrolling stutter, and a
-  cover that fails to decode now logs to Diagnostics instead of silently
-  painting the fallback.
-- Artwork no longer disappears for good. Writing a cover re-creates the cache
-  directory when "Clear artwork cache" or "Clear library cache" deleted it
-  (every write had been failing silently, so no cover could come back); a scan
-  that cannot re-read tags no longer prunes covers the database still points at;
-  and clearing the cache stores "no artwork" as null instead of an empty path,
-  which the notification tried to decode as a directory.
-- Artwork is found in far more libraries. Embedded pictures are read in the
-  scan isolate and, on Android, through `MediaMetadataRetriever` from the
-  content URI; when a track has no embedded picture the scan uses an image
-  beside it (`cover`, `folder`, `front`, `album`, `artwork`, `thumb`, or the
-  track's own name) in JPEG, PNG, WebP, GIF or BMP. The per-file ceiling rose
-  from 2 to 4 MiB and oversized art is downscaled instead of dropped. The
-  diagnostics line now reports how many covers each source produced, replacing
-  a warning that claimed "no cover" before those fallbacks had run.
+- Cover art is no longer extracted or stored on the device. Each album's cover
+  is looked up online (Deezer first, then iTunes; both need no key) and
+  remembered as a URL, so the artwork directory that grew past a gigabyte is
+  gone, covers appear on every screen that shows a track, and clearing them
+  costs nothing. The old directory is deleted on the next scan.
+- Playback holds a smaller, steadier working set: the decoded-cover cache is
+  48 MiB instead of 96, each queue entry is one `MediaItem` instead of three,
+  the saved session is no longer re-encoded every three seconds, and state
+  broadcasts carry position at most once a second instead of five times.
+  Diagnostics gains a per-track `memory:` line so long-session growth can be
+  confirmed rather than guessed.
+- Library rows no longer keep a stale cover path: the scan clears the legacy
+  column, so nothing points at a deleted file even on a device that still has
+  the old artwork directory.
 - The library no longer stays empty after the setup scan. A scan finishing while
   the provider was still reading the database was overwritten by that pre-scan
   (empty) read, and setup could start a second scan for a library it had just
@@ -70,7 +110,7 @@ All notable changes to Ljod are documented here. The format follows
   by setup. A scan that unexpectedly returns no tracks keeps the existing rows
   instead of deleting them.
 
-### Changed
+### Build
 
 - Releases are built per ABI for `arm64-v8a` and `armeabi-v7a` with debug
   information split out, and no longer include x86_64: a download is a single-
@@ -103,7 +143,7 @@ All notable changes to Ljod are documented here. The format follows
   exposes a content URI, so tracks whose files cannot be opened directly still
   get covers.
 
-### Changed
+### Build
 
 - The seek bar follows the theme's expressive slider instead of overriding it
   with a capsule thumb and a 5px track.
@@ -122,7 +162,7 @@ All notable changes to Ljod are documented here. The format follows
 - Release workflow publishes a Forgejo release on git.gay with the signed
   `ljod-<version>.apk` attached, replacing the asset when re-run.
 
-### Changed
+### Build
 
 - Release signing reads the keystore as base64 **content**
   (`ANDROID_KEYSTORE_BASE64`), decoded to a git-ignored path outside `build/`;
@@ -161,7 +201,7 @@ All notable changes to Ljod are documented here. The format follows
 - Single source of truth for release identity (`lib/core/app_info.dart`), with a
   test that fails when it drifts from `pubspec.yaml`.
 
-### Changed
+### Build
 
 - Library indexing moved to a batched background isolate with a SQLite cache that
   preserves favourites and play counts across rescans.
@@ -176,7 +216,8 @@ All notable changes to Ljod are documented here. The format follows
 
 Initial scaffold: bundle metadata, theme shell and placeholder screens.
 
-[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.4.0...HEAD
+[Unreleased]: https://git.gay/Veridian-Zenith/ljod/compare/v0.5.0...HEAD
+[0.5.0]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.5.0
 [0.4.0]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.4.0
 [0.3.2]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.2
 [0.3.1]: https://git.gay/Veridian-Zenith/ljod/releases/tag/v0.3.1

@@ -201,17 +201,17 @@ class LjodAudioHandler extends BaseAudioHandler
     _songs = List.unmodifiable(order);
     final start = index.clamp(0, _songs.length - 1);
 
-    queue.add(_songs.map((song) => song.toMediaItem()).toList(growable: false));
-    mediaItem.add(_songs[start].toMediaItem());
+    // One MediaItem per track, shared by the queue, the current item and the
+    // audio-source tag. Building three copies of every entry for a
+    // library-sized queue was the largest allocation on every queue load.
+    final items = [for (final song in _songs) song.toMediaItem()];
+    queue.add(List<MediaItem>.unmodifiable(items));
+    mediaItem.add(items[start]);
 
-    final sources = _songs
-        .map((song) {
-          final uri = song.path.contains('://')
-              ? Uri.parse(song.path)
-              : Uri.file(song.path);
-          return AudioSource.uri(uri, tag: song.toMediaItem());
-        })
-        .toList(growable: false);
+    final sources = [
+      for (var i = 0; i < _songs.length; i++)
+        AudioSource.uri(_uriFor(_songs[i]), tag: items[i]),
+    ];
 
     try {
       await _player.setAudioSources(
@@ -231,6 +231,10 @@ class LjodAudioHandler extends BaseAudioHandler
     _broadcastState();
     if (autoPlay) await play();
   }
+
+  /// Scoped storage can hand back a `content://` URI instead of a path.
+  static Uri _uriFor(SongModel song) =>
+      song.path.contains('://') ? Uri.parse(song.path) : Uri.file(song.path);
 
   List<SongModel> _applyShuffle(List<SongModel> songs, {int first = 0}) {
     final order = shuffledOrder(songs.length, first: first, random: _random);
@@ -355,7 +359,30 @@ class LjodAudioHandler extends BaseAudioHandler
   @override
   Future<void> setVolume(double volume) => _player.setVolume(volume);
 
+  /// Last state broadcast, so pure position ticks are not republished five
+  /// times a second.
+  DateTime _lastBroadcast = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _broadcastKey;
+
   void _broadcastState() {
+    _logPlayback();
+
+    // `playbackEventStream` emits on every position tick. The media session
+    // extrapolates the position from `updatePosition` and the speed, so a real
+    // state change goes out immediately and a bare position tick at most once
+    // a second — the rest was an allocation and a platform-channel message per
+    // 200 ms for the whole session.
+    final key =
+        '${_player.processingState}|${_player.playing}|'
+        '${_player.currentIndex}|${_player.loopMode}|${_player.speed}|$_shuffle';
+    final now = DateTime.now();
+    if (key == _broadcastKey &&
+        now.difference(_lastBroadcast) < const Duration(seconds: 1)) {
+      return;
+    }
+    _broadcastKey = key;
+    _lastBroadcast = now;
+
     final processing = switch (_player.processingState) {
       ProcessingState.idle => AudioProcessingState.idle,
       ProcessingState.loading => AudioProcessingState.loading,
@@ -363,8 +390,6 @@ class LjodAudioHandler extends BaseAudioHandler
       ProcessingState.ready => AudioProcessingState.ready,
       ProcessingState.completed => AudioProcessingState.completed,
     };
-
-    _logPlayback();
 
     playbackState.add(
       playbackState.value.copyWith(

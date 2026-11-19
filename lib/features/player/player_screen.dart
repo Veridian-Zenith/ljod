@@ -583,8 +583,10 @@ class _UpNextStrip extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            CoverArt(
-              path: song?.artworkPath,
+            NetworkCover(
+              artist: song?.artist ?? item.artist ?? '',
+              album: song?.album ?? item.album ?? '',
+              title: item.title,
               size: 30,
               radius: 9,
               label: item.title,

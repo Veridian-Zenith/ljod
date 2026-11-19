@@ -1,7 +1,7 @@
 name: ljod
 description: "A secure, modular, high-performance audio player forged by Veridian Zenith."
 publish_to: "none"
-version: 0.4.0+6
+version: 0.5.0+7
 
 environment:
   sdk: ">=3.13.0 <4.0.0"
@@ -26,6 +26,10 @@ dependencies:
   # Storage
   path: ^1.9.1
   path_provider: ^2.1.6
+  # Direct because the app registers its own implementation of it: see
+  # `lib/core/platform/app_paths.dart` for why Android paths do not go through
+  # path_provider_android's JNI bindings.
+  path_provider_platform_interface: ^2.1.3
   shared_preferences: ^2.5.3
   sqflite: ^2.4.5
 

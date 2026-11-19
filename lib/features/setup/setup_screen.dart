@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,7 +33,8 @@ class SetupScreen extends ConsumerStatefulWidget {
   ConsumerState<SetupScreen> createState() => _SetupScreenState();
 }
 
-class _SetupScreenState extends ConsumerState<SetupScreen> {
+class _SetupScreenState extends ConsumerState<SetupScreen>
+    with WidgetsBindingObserver {
   static const _stepCount = 4;
 
   int _step = 0;
@@ -40,13 +42,38 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
   bool _scanStarted = false;
   bool _requesting = false;
 
+  /// Set when this run changed something a scan would pick up: saved folder
+  /// rules, or an explicit retry. Without it the last step would report the
+  /// previous scan's result and ignore the new rules.
+  bool _scanRequired = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _readExistingPermission();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Re-reads access when the app comes back from Android settings.
+  ///
+  /// Permission granted from the system screen used to leave this flow showing
+  /// "Allow music access" until the person tapped it again, which looked like
+  /// the grant had not worked.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_readExistingPermission());
+    }
+  }
+
   Future<void> _readExistingPermission() async {
+    if (!mounted) return;
     final service = ref.read(libraryServiceProvider);
     if (!service.isAndroid) {
       if (mounted) setState(() => _accessGranted = true);
@@ -108,11 +135,15 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                             onOpenSettings: () =>
                                 ref.read(libraryServiceProvider).openSettings(),
                           ),
-                          2 => const _FoldersStep(),
+                          2 => _FoldersStep(onEditRules: _openFolderRules),
                           _ => _ScanStep(
                             state: library,
                             onRetry: _retryScan,
                             onRequestAccess: _requestScanAccess,
+                            onOpenSettings: () =>
+                                ref.read(libraryServiceProvider).openSettings(),
+                            onOpenFolders: () =>
+                                _openFolderRules(rescanAfterSave: true),
                           ),
                         },
                       ),
@@ -179,8 +210,13 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
     // A populated library means there is nothing to index: setup is being
     // replayed, or a scan already finished. Scanning again re-reads every tag
     // for no gain and raced the finished state away in the first run.
+    // Saving new folder rules must always be followed by a scan, or the rules
+    // appear to be ignored and the screen reports the old library as ready.
     final library = ref.read(libraryProvider).value;
-    if (library != null && library.songs.isNotEmpty && !library.isScanning) {
+    if (library != null &&
+        library.songs.isNotEmpty &&
+        !library.isScanning &&
+        !_scanRequired) {
       return;
     }
     ref
@@ -189,8 +225,11 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
   }
 
   Future<void> _requestScanAccess() async {
+    if (_requesting) return;
+    setState(() => _requesting = true);
     final granted = await ref.read(libraryServiceProvider).requestPermission();
     if (!mounted) return;
+    setState(() => _requesting = false);
     if (!granted) {
       _toast('Access was not granted. You can allow it in Android settings.');
       return;
@@ -201,7 +240,22 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
 
   void _retryScan() {
     _scanStarted = false;
+    // "Try again" must always run: an earlier failure leaves the old library
+    // in place, which the redundant-scan shortcut would otherwise mistake for
+    // "already up to date".
+    _scanRequired = true;
     _startScan();
+  }
+
+  Future<void> _openFolderRules({bool rescanAfterSave = false}) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const FolderRulesScreen(rescanOnSave: false),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    _scanRequired = true;
+    if (rescanAfterSave) _retryScan();
   }
 
   void _toast(String message) {
@@ -366,7 +420,9 @@ class _WelcomeStep extends StatelessWidget {
         const _FeatureRow(
           icon: Icons.offline_bolt_rounded,
           title: 'Works offline',
-          message: 'Playback, artwork and lyrics stay on this device.',
+          message:
+              'Playback and lyrics stay on this device. Album artwork is '
+              'fetched online when it is available.',
         ),
         const _FeatureRow(
           icon: Icons.folder_rounded,
@@ -383,8 +439,10 @@ class _WelcomeStep extends StatelessWidget {
         const SizedBox(height: 10),
         const _InfoNote(
           text:
-              'When enabled: track title, artist, album (if set), and duration '
-              'are sent to LRCLIB for lyrics lookup. No audio files are uploaded.',
+              'Lyrics lookup (optional) sends the track title, artist, album and '
+              'duration to LRCLIB. Album artwork is fetched from Deezer and '
+              'Apple’s iTunes catalogue using the artist and album names. No '
+              'audio files are uploaded.',
         ),
         const SizedBox(height: 20),
         Panel(
@@ -400,8 +458,8 @@ class _WelcomeStep extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'No account, no ads, no library upload. The only network '
-                  'request is an optional lyrics lookup.',
+                  'No account, no ads, no library upload. Network use is limited '
+                  'to artwork lookups and optional lyrics.',
                   style: theme.textTheme.bodySmall,
                 ),
               ),
@@ -577,7 +635,9 @@ class _AccessStep extends StatelessWidget {
 }
 
 class _FoldersStep extends ConsumerWidget {
-  const _FoldersStep();
+  const _FoldersStep({required this.onEditRules});
+
+  final VoidCallback onEditRules;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -661,16 +721,19 @@ class _FoldersStep extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         OutlinedButton.icon(
-          onPressed: () async {
-            await Navigator.of(context).push<bool>(
-              MaterialPageRoute(
-                builder: (_) => const FolderRulesScreen(rescanOnSave: false),
-              ),
-            );
-          },
+          onPressed: onEditRules,
           icon: const Icon(Icons.tune_rounded, size: 18),
           label: const Text('Edit folder rules'),
         ),
+        if (settings.folderFilterMode == FolderFilterMode.only &&
+            count == 0) ...[
+          const SizedBox(height: 12),
+          Text(
+            'No folders are selected, so the next scan will find nothing. Pick '
+            'at least one folder, or switch back to all folders.',
+            style: theme.textTheme.bodySmall?.copyWith(color: LjodTheme.error),
+          ),
+        ],
         const SizedBox(height: 18),
         Text(
           'Folder rules apply to the scan that runs next. Content-only '
@@ -689,30 +752,69 @@ class _ScanStep extends StatelessWidget {
     required this.state,
     required this.onRetry,
     required this.onRequestAccess,
+    required this.onOpenSettings,
+    required this.onOpenFolders,
   });
 
   final LibraryState state;
   final VoidCallback onRetry;
   final VoidCallback onRequestAccess;
+  final VoidCallback onOpenSettings;
+  final VoidCallback onOpenFolders;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final progress = state.scanProgress;
-    final finished = state.lastScan != null && !state.isScanning;
+    final failed = state.error != null;
+    // A populated library counts as done even without `lastScan`: that stamp
+    // only exists in memory, so replaying setup after a restart used to show
+    // "Building your library" forever with no scan running.
+    final finished =
+        !state.isScanning &&
+        !failed &&
+        (state.lastScan != null || state.songs.isNotEmpty);
+    final empty = finished && state.songs.isEmpty;
     final albums = state.songs.map((song) => song.displayAlbum).toSet().length;
+
+    final headline = state.permissionDenied
+        ? 'Music access is required'
+        : failed
+        ? 'Scan hit a problem'
+        : empty
+        ? 'No audio found'
+        : finished
+        ? 'Library ready'
+        : 'Building your library';
+    final message = state.permissionDenied
+        ? 'Ljod cannot read audio without permission. Allow access, then scan '
+              'again — your files are never changed.'
+        : failed
+        ? 'The library was left as it was. Try again, or check folder rules '
+              'and access.'
+        : empty
+        ? 'Nothing playable was found in the folders your rules allow. Ljod '
+              'plays MP3, FLAC, M4A, AAC, OGG, Opus and WAV.'
+        : finished
+        ? '${state.songs.length} tracks from $albums albums are ready to play.'
+        : 'Ljod is reading tags. This happens once and is safe to leave in the '
+              'background.';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 18),
         _StepIcon(
-          icon: finished ? Icons.library_music_rounded : Icons.radar_rounded,
-          active: true,
+          icon: finished && !empty
+              ? Icons.library_music_rounded
+              : state.permissionDenied || failed
+              ? Icons.error_outline_rounded
+              : Icons.radar_rounded,
+          active: !state.permissionDenied && !failed,
         ),
         const SizedBox(height: 24),
         Text(
-          finished ? 'Library ready' : 'Building your library',
+          headline,
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.w800,
             letterSpacing: -0.8,
@@ -720,10 +822,7 @@ class _ScanStep extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Text(
-          finished
-              ? '${state.songs.length} tracks from $albums albums are ready to play.'
-              : 'Ljod is reading tags and artwork. This happens once and is '
-                    'safe to leave running in the background.',
+          message,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: LjodTheme.textSoft,
           ),
@@ -756,7 +855,12 @@ class _ScanStep extends StatelessWidget {
                     child: Text(
                       state.permissionDenied
                           ? 'Music access is required'
-                          : state.error ?? state.scanLabel,
+                          : state.error ??
+                                (finished
+                                    ? (empty
+                                          ? 'No tracks indexed'
+                                          : 'Library up to date')
+                                    : state.scanLabel),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -766,15 +870,25 @@ class _ScanStep extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               LinearProgressIndicator(
-                value: state.isScanning ? progress : (finished ? 1 : 0),
+                value: state.isScanning
+                    ? progress
+                    : finished && !empty && !state.permissionDenied
+                    ? 1
+                    : 0,
                 minHeight: 4,
               ),
               const SizedBox(height: 10),
               Text(
-                state.isScanning
+                state.permissionDenied
+                    ? 'Allow access, then scan again.'
+                    : failed
+                    ? 'The library was not changed.'
+                    : state.isScanning
                     ? progress == null
                           ? 'Looking for audio files…'
                           : '${state.scanProcessed} of ${state.scanTotal} tracks'
+                    : empty
+                    ? 'Nothing matched the current folder rules.'
                     : finished
                     ? 'Indexed locally. You can rescan any time from Settings.'
                     : 'Scan has not started yet.',
@@ -783,20 +897,37 @@ class _ScanStep extends StatelessWidget {
             ],
           ),
         ),
-        if (state.permissionDenied || state.error != null) ...[
+        if (state.permissionDenied) ...[
           const SizedBox(height: 16),
-          if (state.permissionDenied)
-            FilledButton.icon(
-              onPressed: onRequestAccess,
-              icon: const Icon(Icons.lock_open_rounded, size: 18),
-              label: const Text('Allow access'),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Try again'),
-            ),
+          FilledButton.icon(
+            onPressed: onRequestAccess,
+            icon: const Icon(Icons.lock_open_rounded, size: 18),
+            label: const Text('Allow access'),
+          ),
+          TextButton.icon(
+            onPressed: onOpenSettings,
+            icon: const Icon(Icons.settings_rounded, size: 18),
+            label: const Text('Open app settings'),
+          ),
+        ] else if (failed) ...[
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Try again'),
+          ),
+        ] else if (empty) ...[
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: onOpenFolders,
+            icon: const Icon(Icons.tune_rounded, size: 18),
+            label: const Text('Edit folder rules'),
+          ),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Scan again'),
+          ),
         ],
       ],
     );

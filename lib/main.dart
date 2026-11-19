@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/diagnostics/diagnostics_log.dart';
+import 'core/platform/app_paths.dart';
 import 'core/theme/ljod_theme.dart';
 import 'features/setup/setup_screen.dart';
 import 'features/setup/setup_state.dart';
@@ -16,12 +17,18 @@ import 'services/settings/settings_provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Decoded covers are the largest single memory consumer here, and an
-  // unbounded image cache on a phone with big embedded art is a plausible
-  // source of "the UI vanished" process deaths. Keep it small and predictable.
+  // Answer directories ourselves, before the first folder is read (the
+  // diagnostics log below is the first). Must come after the binding, which is
+  // where the plugin registrant installs the Android implementation.
+  installAppPaths();
+
+  // Decoded covers are the largest single memory consumer here. 96 MiB of
+  // them was a permanent allocation on a phone that also has to keep other apps
+  // alive — 48 MiB still holds a dozen full-screen covers or a screenful of
+  // tiles, and the LRU drops the rest.
   PaintingBinding.instance.imageCache
-    ..maximumSize = 120
-    ..maximumSizeBytes = 96 << 20;
+    ..maximumSize = 60
+    ..maximumSizeBytes = 48 << 20;
 
   // Everything that goes wrong is written to a short local trail before the
   // process can die, so a crash is readable on the next launch even without
@@ -89,9 +96,10 @@ Future<LjodAudioHandler> _initializeAudio() async {
         androidNotificationOngoing: false,
         androidStopForegroundOnPause: false,
         androidNotificationClickStartsActivity: true,
-        preloadArtwork: true,
-        artDownscaleWidth: 512,
-        artDownscaleHeight: 512,
+        // Covers are URLs painted by the app; the media session has no local
+        // artwork to preload or downscale, and asking for it would only cost a
+        // bitmap decode per track.
+        preloadArtwork: false,
       ),
     );
   } catch (error, stackTrace) {

@@ -18,30 +18,20 @@ crash traces captured on the previous launch) and has Copy and Clear actions.
 
 ## Tracks appear but have no cover art
 
-* Covers come from the track's own tags first, then from an image stored beside
-  it: `cover`, `folder`, `front`, `album`, `albumart`, `artwork`, `thumb`, or a
-  file named after the track, in JPEG, PNG, WebP, GIF or BMP. Nothing is
-  fetched online.
-* On Android every cover is downscaled to a 1024 px JPEG before it is cached,
-  in whichever format it arrived (JPEG, PNG, WebP, GIF, BMP). A full-size PNG
-  cover is 2–8 MiB; downscaled, the same art is a few hundred kilobytes. Covers
-  cached before this existed are converted on the next scan.
-* Outside Android nothing downscales, so a cover above 4 MiB is skipped rather
-  than stored.
-* Settings → Diagnostics writes an `artwork:` line per scan that says how many
-  tracks got a cover and whether it came from embedded art, a sidecar image, the
-  platform bridge, or the existing cache.
-* Covers show in rows, grids, rails, the queue, the mini player and the player.
-  A tile that still shows initials while another screen shows the cover is a
-  decode failure, not a missing image: look for
-  `artwork: could not decode <path>` in Diagnostics, which now records the file
-  and the decoder error instead of failing silently.
-* A stored path whose file has disappeared is caught when the app loads and
-  before every scan: the dead path is forgotten and its cover is extracted
-  again in the background. `artwork: N cached cover(s) were missing;
-  re-extracting` in Diagnostics means this repair ran.
-* After clearing the artwork cache, covers reappear on the next scan. Force one
-  with Settings → Rescan device.
+* Covers are looked up per album online. Deezer's public API is asked first and
+  the iTunes Search API second; neither needs a key, and the result is remembered
+  as a URL, so no image files are stored on the device.
+* An album whose tags do not match a catalogue entry shows initials. That answer
+  is retried after 14 days, and clearing Settings → Artwork lookups forgets every
+  answer so it is asked again immediately.
+* Lookups need a network connection. Offline, tracks still list and play, but
+  tiles show initials until a connection returns.
+* Settings → Diagnostics writes one `scan:` line per pass — tracks, albums,
+  artists, folders, total minutes and elapsed ms — and `artwork: lookup failed
+  (...)` when a catalogue could not be reached.
+* A tile that still shows initials while another screen shows the cover is
+  usually a failed download: look for `artwork: could not load <url>` in
+  Diagnostics, which records the URL and the loader error.
 
 ## Lyrics are missing
 
@@ -55,8 +45,24 @@ Resolution order is sidecar → embedded tags → LRCLIB.
   Tracks without both are skipped, since there is nothing safe to search.
 
 Answers are cached, including negative ones. If lyrics were added since the last
-lookup, open the lyrics sheet and use **Refresh**, or clear the cache in
-Settings.
+lookup, open the lyrics sheet and use **Refresh**, or refresh the cache in
+Settings → Caches.
+
+## A cache looks wrong
+
+Each cache has its own refresh in Settings → Caches, so one bad answer never
+needs a full library rescan:
+
+* **Artwork lookups** drops every remembered cover link and any cover files an
+  older build left; covers are looked up again as tiles appear.
+* **Cached lyrics** drops stored answers; sidecar and embedded lyrics are read
+  again, and the online lookup runs once more if it is enabled.
+* **Rescan device** rebuilds the index itself — tags, folder rules and the
+  missing-row prune — in one pass.
+
+Every refresh leaves a line in Diagnostics: `artwork: cleared N remembered
+lookup(s)`, `lyrics: cleared N cached answer(s) (M bytes)`, or the `scan:`
+summary with its warnings for anything that could not be read.
 
 ## Playback stops in the background
 
@@ -101,7 +107,29 @@ flutter clean
 flutter pub get
 ```
 
-### Gradle 9.8.2 native-access warnings
+### The build used the wrong JDK, an old daemon, or too much memory
+
+`android/gradle/gradle-daemon-jvm.properties` pins the Gradle daemon to a JDK 21
+from Adoptium, and daemon JVM criteria take precedence over `JAVA_HOME` and
+`org.gradle.java.home` — a build launched with `JAVA_HOME` pointing at another
+JDK still runs its daemon on Temurin 21. Check what a daemon is really using:
+
+```sh
+ps -eo args | grep -o '/[^ ]*/bin/java' | sort -u
+```
+
+Android Studio hands Gradle its own JDK through the Tooling API, so a build
+started from the IDE uses **Settings → Build, Execution, Deployment → Build
+Tools → Gradle → Gradle JDK**; set that to Temurin 21 as well.
+
+Gradle keeps one daemon per JVM for three hours by default; this project sets
+`org.gradle.daemon.idletimeout=600000` (ten minutes) and caps the Kotlin daemon
+at 1 GiB, because it otherwise inherits the Gradle heap. After a wrapper bump
+the previous version's daemon can still be running, and `./gradlew --stop` only
+stops the current version — stop the old one with its own distribution, or
+delete `~/.gradle/daemon/<version>`.
+
+### Gradle native-access warnings
 
 ```
 WARNING: A restricted method in java.lang.System has been called

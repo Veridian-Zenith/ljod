@@ -63,7 +63,12 @@ class _FolderRulesScreenState extends ConsumerState<FolderRulesScreen> {
         ),
         actions: [
           IconButton(
-            onPressed: () => ref.invalidate(libraryFoldersProvider),
+            onPressed: () {
+              // Drop the last scan's tally, so this queries the device again
+              // instead of handing back the list it already published.
+              ref.read(scannedFoldersProvider.notifier).clear();
+              ref.invalidate(libraryFoldersProvider);
+            },
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Reload folders',
           ),

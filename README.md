@@ -18,7 +18,7 @@ blueprint aesthetic with Material 3 Expressive geometry.
 ## Features
 
 - MediaStore-backed Android library scan, with desktop folders as a dev fallback
-- Embedded tag and cover-art extraction, bounded artwork cache, SQLite library cache
+- Tag reading, online album artwork (no key, nothing stored on disk), SQLite library cache
 - Background playback and media notification via `just_audio` + `audio_service`
 - Queue, shuffle, repeat, favourites and play history
 - Synced and plain lyrics: sidecar `.lrc`/`.txt`, embedded tags, and an opt-in
@@ -63,7 +63,8 @@ and the two `local.properties` files.
 ## Privacy
 
 Everything stays on the device: the library lives in a local SQLite file, and
-artwork and lyric caches sit in the app support directory. There is no account,
+lyric caches sit in the app support directory, and cover art is fetched rather
+than stored. There is no account,
 no analytics, no crash reporting and no ads.
 
 The only outbound request is the LRCLIB lyrics lookup, which is **off by
@@ -81,7 +82,7 @@ Full detail in [docs/PRIVACY.md](docs/PRIVACY.md).
 - `material_ui` 1.9 (`StyleVariant.material3Expressive`)
 - Riverpod 3, `just_audio`, `audio_service`, `sqflite`, `shared_preferences`, `dio`
 - Bundled JetBrains Mono (no runtime font downloads)
-- Gradle 9.8.2, AGP 9.4.1, Kotlin 2.4.20 (AGP built-in Kotlin), JDK 21
+- Gradle 9.9.1, AGP 9.5.1, Kotlin 2.4.21 (AGP built-in Kotlin), JDK 21
 
 ## Android
 
@@ -97,7 +98,7 @@ not as a path into the checkout.
 
 ```sh
 # after bumping pubspec.yaml + lib/core/app_info.dart
-git tag v0.4.0 && git push origin v0.4.0
+git tag v0.5.0 && git push origin v0.5.0
 ```
 
 The workflow checks the tag against the pubspec, builds with the four repository

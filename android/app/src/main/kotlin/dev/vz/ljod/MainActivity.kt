@@ -1,6 +1,7 @@
 package dev.vz.ljod
 
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -102,36 +103,83 @@ class MainActivity : AudioServiceFragmentActivity() {
                         }
                     }
 
-                    "shrinkArtwork" -> {
-                        val dir = call.argument<String>("dir") ?: ""
-                        val files = call.argument<List<*>>("files")
-                            ?.mapNotNull { it as? String }
-                            ?: emptyList()
-                        thread {
-                            try {
-                                val shrunk = MusicProvider(applicationContext)
-                                    .shrinkArtwork(dir, files)
-                                main.post { result.success(shrunk) }
-                            } catch (error: Exception) {
-                                main.post {
-                                    result.error(
-                                        "SHRINK_FAILED",
-                                        error.message
-                                            ?: "Could not downscale artwork.",
-                                        null
-                                    )
-                                }
-                            }
-                        }
-                    }
-
                     else -> result.notImplemented()
+                }
+            }
+
+        // Directory resolution. path_provider_android answers paths through
+        // package:jni, and with jni 1.2.0 its generated bindings look the
+        // Context class up by type signature ("Landroid/content/Context;")
+        // and throw ClassNotFoundException. This channel returns the same
+        // directories instead, so the database, the caches and just_audio's
+        // asset cache no longer depend on that bridge. Keeping the semantics
+        // identical means files from earlier builds are found in place.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PATHS_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "temporary", "cache" ->
+                            result.success(cacheDir.absolutePath)
+
+                        "support" -> result.success(filesDir.absolutePath)
+
+                        "documents" ->
+                            result.success(
+                                getDir("flutter", MODE_PRIVATE).absolutePath
+                            )
+
+                        "externalStorage" ->
+                            result.success(getExternalFilesDir(null)?.absolutePath)
+
+                        "externalCachePaths" ->
+                            result.success(
+                                externalCacheDirs.mapNotNull { it?.absolutePath }
+                            )
+
+                        "externalStoragePaths" ->
+                            result.success(
+                                getExternalFilesDirs(
+                                    storageDirectory(call.argument<String>("type"))
+                                ).mapNotNull { it?.absolutePath }
+                            )
+
+                        "downloads" ->
+                            result.success(
+                                getExternalFilesDir(
+                                    Environment.DIRECTORY_DOWNLOADS
+                                )?.absolutePath
+                            )
+
+                        else -> result.notImplemented()
+                    }
+                } catch (error: Exception) {
+                    result.error(
+                        "PATH_FAILED",
+                        error.message ?: "Could not resolve ${call.method}.",
+                        null
+                    )
                 }
             }
     }
 
+    /** Maps a `StorageDirectory` name to its platform constant. */
+    private fun storageDirectory(type: String?): String? = when (type) {
+        "music" -> Environment.DIRECTORY_MUSIC
+        "podcasts" -> Environment.DIRECTORY_PODCASTS
+        "ringtones" -> Environment.DIRECTORY_RINGTONES
+        "alarms" -> Environment.DIRECTORY_ALARMS
+        "notifications" -> Environment.DIRECTORY_NOTIFICATIONS
+        "pictures" -> Environment.DIRECTORY_PICTURES
+        "movies" -> Environment.DIRECTORY_MOVIES
+        "downloads" -> Environment.DIRECTORY_DOWNLOADS
+        "dcim" -> Environment.DIRECTORY_DCIM
+        "documents" -> Environment.DIRECTORY_DOCUMENTS
+        else -> null
+    }
+
     private companion object {
         const val MEDIA_CHANNEL = "dev.vz.ljod/media"
+        const val PATHS_CHANNEL = "dev.vz.ljod/paths"
         const val CRASH_LOG = "ljod-crash.log"
     }
 }

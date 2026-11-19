@@ -1,12 +1,13 @@
-import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/song_model.dart';
 import '../../core/theme/ljod_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../services/library/online_artwork.dart';
 
 // ---------------------------------------------------------------------------
 // Atmospheric substrate
@@ -73,7 +74,7 @@ class _Glow extends StatelessWidget {
 class CoverArt extends StatelessWidget {
   const CoverArt({
     super.key,
-    this.path,
+    this.imageUrl,
     this.size = 56,
     this.radius = 16,
     this.label = '',
@@ -82,25 +83,25 @@ class CoverArt extends StatelessWidget {
     this.showArtwork = true,
   });
 
-  /// Path to a cached image (never an audio file).
-  final String? path;
+  /// Cover URL resolved by the artwork catalogue. Nothing is read from disk.
+  final String? imageUrl;
   final double size;
   final double radius;
   final String label;
   final IconData icon;
   final bool showBorder;
 
-  /// Whether the cached image is decoded and painted instead of the fallback.
+  /// Whether the fetched image is decoded and painted instead of the fallback.
   ///
   /// On by default. Decoding is bounded by [_decodeSize], which asks the engine
   /// for a bitmap no larger than the box actually painted (capped at 1024 px),
-  /// so a 2000×2000 cover costs a tile-sized image rather than a
-  /// full-resolution one. Full-size decoding for a 54 px row was what made long
+  /// so a 1000 px catalogue cover costs a tile-sized image rather than a
+  /// full-resolution one. Decoding full-size for a 54 px row was what made long
   /// lists churn the image cache; keeping the picture switched off everywhere
   /// but the player only made working covers look missing.
   ///
-  /// The media notification is unaffected — it reads `artUri` from the media
-  /// item, not from this widget.
+  /// The media notification is unaffected: it reads `artUri` from the media
+  /// item, and covers are URLs the app paints rather than local files.
   final bool showArtwork;
 
   /// Paths whose decode already failed once, so a broken cover in a scrolling
@@ -109,32 +110,10 @@ class CoverArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imagePath = showArtwork ? path : null;
-    final child = imagePath == null || imagePath.isEmpty
-        ? _fallback(context)
-        : SizedBox.expand(
-            child: Image.file(
-              File(imagePath),
-              fit: BoxFit.cover,
-              cacheWidth: _decodeSize(context),
-              cacheHeight: _decodeSize(context),
-              filterQuality: FilterQuality.medium,
-              gaplessPlayback: true,
-              // A decode failure used to be invisible: the row simply showed
-              // initials, so "no art" could mean an empty file, a deleted
-              // cache or a corrupt image with no way to tell them apart.
-              errorBuilder: (_, error, _) {
-                if (_loggedFailures.length < 32 &&
-                    _loggedFailures.add(imagePath)) {
-                  DiagnosticsLog.instance.log(
-                    'artwork: could not decode $imagePath ($error)',
-                    level: DiagnosticsLevel.warning,
-                  );
-                }
-                return _fallback(context);
-              },
-            ),
-          );
+    final networkUrl = showArtwork ? imageUrl : null;
+    final child = networkUrl != null && networkUrl.isNotEmpty
+        ? _network(context, networkUrl)
+        : _fallback(context);
 
     // An infinite size means "fill the parent". Passing it through as a width
     // asks layout for an infinite box and relies on the parent's constraints to
@@ -150,6 +129,43 @@ class CoverArt extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: child,
+    );
+  }
+
+  /// Paints a cover fetched from the artwork catalogue.
+  ///
+  /// The fallback sits underneath, so a tile never flashes empty while the
+  /// image downloads, and `cacheWidth` keeps the decoded bitmap at the size
+  /// actually painted instead of the 1000 px the catalogue serves.
+  Widget _network(BuildContext context, String url) {
+    return SizedBox.expand(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _fallback(context),
+          Image.network(
+            url,
+            fit: BoxFit.cover,
+            cacheWidth: _decodeSize(context),
+            cacheHeight: _decodeSize(context),
+            filterQuality: FilterQuality.medium,
+            gaplessPlayback: true,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
+                wasSynchronouslyLoaded || frame != null
+                ? child
+                : const SizedBox.shrink(),
+            errorBuilder: (_, error, _) {
+              if (_loggedFailures.length < 32 && _loggedFailures.add(url)) {
+                DiagnosticsLog.instance.log(
+                  'artwork: could not load $url ($error)',
+                  level: DiagnosticsLevel.warning,
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -229,6 +245,53 @@ class _CoverPatternPainter extends CustomPainter {
   }
 }
 
+/// A cover resolved online for one album.
+///
+/// Nothing is stored as an image file: the URL is looked up once per album,
+/// remembered in the database as text, and painted by [CoverArt]. Every row of
+/// the same album shares the lookup, because [ArtworkRequest] compares by its
+/// normalized memo key.
+class NetworkCover extends ConsumerWidget {
+  const NetworkCover({
+    super.key,
+    this.artist = '',
+    this.album = '',
+    this.title = '',
+    this.size = 56,
+    this.radius = 16,
+    this.label = '',
+    this.showArtwork = true,
+  });
+
+  final String artist;
+  final String album;
+  final String title;
+  final double size;
+  final double radius;
+  final String label;
+
+  /// See [CoverArt.showArtwork].
+  final bool showArtwork;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url = ref
+        .watch(
+          artworkUrlProvider(
+            ArtworkRequest(artist: artist, album: album, title: title),
+          ),
+        )
+        .value;
+    return CoverArt(
+      imageUrl: url,
+      size: size,
+      radius: radius,
+      label: label,
+      showArtwork: showArtwork,
+    );
+  }
+}
+
 class SongCover extends StatelessWidget {
   const SongCover({
     super.key,
@@ -247,8 +310,10 @@ class SongCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CoverArt(
-      path: song.artworkPath,
+    return NetworkCover(
+      artist: song.artist,
+      album: song.album,
+      title: song.title,
       size: size,
       radius: radius,
       label: song.album.isEmpty ? song.title : song.album,
@@ -965,15 +1030,19 @@ class AlbumTile extends StatelessWidget {
     super.key,
     required this.title,
     required this.subtitle,
-    required this.artworkPath,
     required this.onTap,
+    this.artist = '',
+    this.album = '',
     this.badge,
   });
 
   final String title;
   final String subtitle;
-  final String? artworkPath;
   final VoidCallback onTap;
+
+  /// Identity used to find the cover online; [album] falls back to [title].
+  final String artist;
+  final String album;
   final String? badge;
 
   @override
@@ -989,8 +1058,10 @@ class AlbumTile extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                CoverArt(
-                  path: artworkPath,
+                NetworkCover(
+                  artist: artist,
+                  album: album.isEmpty ? title : album,
+                  title: title,
                   radius: LjodTheme.radiusMd,
                   label: title,
                   size: double.infinity,

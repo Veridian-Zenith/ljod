@@ -9,14 +9,14 @@ device unless you explicitly turn on lyrics lookup.
 | Data | Location | Notes |
 | --- | --- | --- |
 | Library index, favourites, play counts | `ljod_library.db` (app documents) | rebuildable cache |
-| Extracted cover art | `<app support>/artwork/` | one file per unique picture, downscaled to a 1024 px JPEG on Android |
+| Artwork lookups | `artwork_urls` (same database) | one row per album: the cover URL, or a "none found" mark retried after 14 days |
 | Cached lyrics | `<app support>/lyrics/` | includes "no lyrics" answers |
 | Settings | `SharedPreferences` | motion, lyrics lookup, folder rules, sorting |
 | Diagnostics | `<app support>/diagnostics-2.log` | capped at 128 KiB |
 
 All of it is inside the app's private storage. Uninstalling the app removes it.
-"Clear library cache", "Clear lyrics cache" and "Clear artwork cache" in Settings
-delete the corresponding data at any time.
+"Clear library cache", "Cached lyrics" and "Artwork lookups" in Settings delete the
+corresponding data at any time.
 
 ## Permissions
 
@@ -51,8 +51,9 @@ Use *Refresh* in the lyrics sheet to deliberately retry, or clear the cache in
 Settings. If LRCLIB returns a rate limit, Ljod honours `Retry-After` and waits
 before asking again.
 
-Turn the setting off and Ljod makes no network requests at all; sidecar `.lrc`
-files and embedded lyrics keep working.
+Turn the setting off and lyrics lookups stop; sidecar `.lrc` files and embedded
+lyrics keep working. Cover artwork is still resolved online, because it is the
+only source of artwork — see *Cover art lookups* below.
 
 ## Diagnostics
 
@@ -65,3 +66,12 @@ telemetry endpoint.
 
 No ads, no ad SDKs, no third-party analytics or attribution libraries. The
 dependency list in `pubspec.yaml` is the complete set of code that ships.
+
+## Cover art lookups
+
+Cover art is fetched, not stored. Finding an album's cover sends its artist and
+album names to Deezer and to Apple's iTunes Search API; nothing else about the
+track, its file or the device is included, no account is needed and no key is
+used. The answer is kept locally only as a URL. Clearing the library, or
+Settings → Artwork lookups, removes those rows; the images themselves stay on the
+catalogue's servers and are fetched again on demand.

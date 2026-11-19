@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/app_info.dart';
+import '../../core/diagnostics/diagnostics_log.dart';
 import '../../core/models/song_model.dart';
 import '../library/library_providers.dart';
 import '../settings/settings_provider.dart';
@@ -866,17 +867,33 @@ class LyricsService {
   }
 
   /// Deletes every cached online lookup. Local sidecars and tags are untouched.
+  ///
+  /// What was dropped is logged, so a manual refresh can be confirmed from the
+  /// diagnostics trail rather than inferred from a repaint.
   Future<void> clearCache() async {
     _memory.clear();
     final directory = await _directory();
     if (directory == null) return;
+    var files = 0;
+    var bytes = 0;
     try {
       await for (final entity in directory.list(followLinks: false)) {
-        if (entity is File) await entity.delete();
+        if (entity is! File) continue;
+        try {
+          bytes += await entity.length();
+          await entity.delete();
+          files++;
+        } catch (_) {
+          // Locked or already gone: keep clearing the rest.
+        }
       }
     } catch (_) {
       // Best effort.
     }
+    DiagnosticsLog.instance.log(
+      'lyrics: cleared $files cached answer(s) ($bytes bytes)',
+      level: DiagnosticsLevel.info,
+    );
   }
 }
 

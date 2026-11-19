@@ -5,7 +5,7 @@ import '../../core/app_info.dart';
 import '../../core/theme/ljod_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/vz_components.dart';
-import '../../services/library/artwork_cache.dart';
+import '../../services/library/online_artwork.dart';
 import '../../services/lyrics/lyrics_service.dart';
 import '../../services/library/library_providers.dart';
 import '../../services/settings/settings_provider.dart';
@@ -119,26 +119,28 @@ class SettingsScreen extends ConsumerWidget {
                 icon: Icons.radar_rounded,
                 title: 'Rescan device',
                 subtitle: library.isScanning
-                    ? 'Reading tags and cover art…'
-                    : 'Re-index every supported audio file',
+                    ? 'Reading tags…'
+                    : 'Re-index every supported audio file in one pass',
                 enabled: !library.isScanning,
                 onTap: () async {
                   await ref.read(libraryProvider.notifier).rescan();
                   if (!context.mounted) return;
-                  final denied =
-                      ref.read(libraryProvider).value?.permissionDenied ??
-                      false;
+                  final state = ref.read(libraryProvider).value;
                   _toast(
                     context,
-                    denied
+                    state?.permissionDenied == true
                         ? 'Music access is still required.'
-                        : 'Library scan requested.',
+                        : state?.error != null
+                        ? 'Scan failed. Diagnostics has the details.'
+                        : '${state?.songs.length ?? 0} tracks indexed.',
                   );
                 },
               ),
               const _RowDivider(),
-              if (library.isScanning ||
-                  library.scanPhase != ScanPhase.idle) ...[
+              // Only while a scan is running: `scanPhase` stays `done` after
+              // it finishes, which left a row titled "Scanning" on Settings
+              // forever, showing "Library up to date".
+              if (library.isScanning) ...[
                 _SettingRow(
                   icon:
                       library.scanPhase == ScanPhase.reading ||
@@ -153,19 +155,27 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 const _RowDivider(),
               ],
+            ],
+          ),
+          const SizedBox(height: 18),
+          // Each cache has its own re-run, so a fault in one never forces a
+          // full library rescan to fix it.
+          const _SectionLabel('Caches'),
+          _Card(
+            children: [
               _SettingRow(
                 icon: Icons.image_rounded,
-                title: 'Cached artwork',
+                title: 'Artwork lookups',
                 subtitle: ref
-                    .watch(artworkCacheBytesProvider)
+                    .watch(artworkLookupCountProvider)
                     .when(
-                      data: (bytes) =>
-                          '${formatBytes(bytes)} used · '
-                          '${formatBytes(ArtworkCache.defaultBudgetBytes)} ceiling',
-                      error: (_, _) => 'Size unavailable on this platform',
-                      loading: () => 'Measuring…',
+                      data: (count) =>
+                          '$count ${count == 1 ? 'album' : 'albums'} remembered · '
+                          'tap to look up covers again',
+                      error: (_, _) => 'Tap to look up covers again',
+                      loading: () => 'Tap to look up covers again',
                     ),
-                onTap: () => _confirmClearArtwork(context, ref),
+                onTap: () => _refreshArtwork(context, ref),
               ),
               const _RowDivider(),
               _SettingRow(
@@ -175,12 +185,11 @@ class SettingsScreen extends ConsumerWidget {
                     .watch(lyricsCacheBytesProvider)
                     .when(
                       data: (bytes) =>
-                          '${formatBytes(bytes)} used · one lookup per track, '
-                          'kept until you refresh it',
+                          '${formatBytes(bytes)} used · tap to look up lyrics again',
                       error: (_, _) => 'Size unavailable on this platform',
                       loading: () => 'Measuring…',
                     ),
-                onTap: () => _confirmClearLyrics(context, ref),
+                onTap: () => _refreshLyrics(context, ref),
               ),
               const _RowDivider(),
               _SettingRow(
@@ -302,8 +311,8 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 26),
           Text(
             'LJOD AUDIO FORGE\n'
-            'Built by Veridian Zenith. Your files never leave this device\n'
-            'unless you explicitly enable an online lookup.',
+            'Built by Veridian Zenith. Your audio never leaves this device.\n'
+            'Covers and lyrics send names, never files.',
             textAlign: TextAlign.center,
             style: theme.textTheme.labelSmall?.copyWith(
               color: LjodTheme.textMuted,
@@ -351,15 +360,15 @@ class SettingsScreen extends ConsumerWidget {
     _toast(context, 'Library cache cleared.');
   }
 
-  Future<void> _confirmClearLyrics(BuildContext context, WidgetRef ref) async {
+  Future<void> _refreshLyrics(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear cached lyrics?'),
+        title: const Text('Refresh cached lyrics?'),
         content: const Text(
-          'Downloaded and remembered lyrics are deleted. The next time you open '
-          'a track, LJod asks LRCLIB once again. Sidecar .lrc files and embedded '
-          'lyrics are untouched.',
+          'Cached lyric answers are deleted. Sidecar and embedded lyrics are read '
+          'again, and the online lookup runs once more if it is enabled. Play '
+          'counts and your library are untouched.',
         ),
         actions: [
           TextButton(
@@ -368,7 +377,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Clear lyrics'),
+            child: const Text('Refresh'),
           ),
         ],
       ),
@@ -378,17 +387,18 @@ class SettingsScreen extends ConsumerWidget {
     ref.read(lyricsCacheRevisionProvider.notifier).bump();
     ref.invalidate(lyricsCacheBytesProvider);
     if (!context.mounted) return;
-    _toast(context, 'Cached lyrics cleared.');
+    _toast(context, 'Lyrics cache refreshed.');
   }
 
-  Future<void> _confirmClearArtwork(BuildContext context, WidgetRef ref) async {
+  Future<void> _refreshArtwork(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear cached artwork?'),
+        title: const Text('Refresh artwork lookups?'),
         content: const Text(
-          'Covers on disk are deleted and album tiles show initials until the '
-          'next scan re-reads them. Your library and audio files are untouched.',
+          'Remembered cover links are dropped and looked up again as tiles are '
+          'shown. Cover files left by older versions are deleted. Your library '
+          'and audio files are untouched.',
         ),
         actions: [
           TextButton(
@@ -397,16 +407,16 @@ class SettingsScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Clear artwork'),
+            child: const Text('Refresh'),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
-    await ref.read(libraryProvider.notifier).clearArtworkCache();
-    ref.invalidate(artworkCacheBytesProvider);
+    await ref.read(libraryProvider.notifier).clearArtworkLookups();
+    ref.invalidate(artworkLookupCountProvider);
     if (!context.mounted) return;
-    _toast(context, 'Cached artwork cleared.');
+    _toast(context, 'Artwork lookups refreshed.');
   }
 
   void _toast(BuildContext context, String message) {

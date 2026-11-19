@@ -13,6 +13,7 @@ import 'package:ljod/features/stats/stats_screen.dart';
 import 'package:ljod/main.dart';
 import 'package:ljod/services/audio/audio_providers.dart';
 import 'package:ljod/services/library/library_providers.dart';
+import 'package:ljod/services/library/online_artwork.dart';
 import 'package:ljod/services/lyrics/lyrics_service.dart';
 import 'package:ljod/services/settings/settings_provider.dart';
 import 'package:material_ui/material_ui.dart';
@@ -219,10 +220,11 @@ final _overrides = [
   audioHandlerProvider.overrideWithValue(_NowPlayingHandler()),
   libraryProvider.overrideWith(_SampleLibraryNotifier.new),
   lyricsProvider.overrideWith((ref, songId) async => _foundLyrics),
-  // Settings shows both cache sizes; path_provider has no plugin here, so the
-  // rows would capture as "Measuring…" instead of the real thing.
+  // Settings shows a cache size and a lookup count; path_provider and SQLite
+  // have no plugin here, so the rows would capture as "Measuring…" and "Tap to
+  // look up covers again" instead of the real thing.
   lyricsCacheBytesProvider.overrideWith((ref) async => 182 * 1024),
-  artworkCacheBytesProvider.overrideWith((ref) async => 3 * 1024 * 1024),
+  artworkLookupCountProvider.overrideWith((ref) async => 64),
 ];
 
 Future<void> _pumpApp(WidgetTester tester) async {

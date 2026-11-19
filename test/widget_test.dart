@@ -9,6 +9,7 @@ import 'package:ljod/features/settings/settings_screen.dart';
 import 'package:ljod/main.dart';
 import 'package:ljod/services/audio/audio_providers.dart';
 import 'package:ljod/services/library/library_providers.dart';
+import 'package:ljod/services/library/online_artwork.dart';
 import 'package:ljod/services/settings/settings_provider.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,28 +26,31 @@ void main() {
     expect(formatDuration(Duration.zero), '--:--');
   });
 
-  test('online lyrics lookup is off by default and stays on once switched', () async {
-    SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
-    final container = ProviderContainer(
-      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-    );
-    addTearDown(container.dispose);
+  test(
+    'online lyrics lookup is off by default and stays on once switched',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final container = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+      );
+      addTearDown(container.dispose);
 
-    // The only outbound request in the app is an explicit opt-in: this is what
-    // docs/PRIVACY.md and the in-app copy promise.
-    expect(container.read(settingsProvider).lyricsLookup, isFalse);
+      // Lyrics lookup is the only outbound request behind an opt-in; cover
+      // artwork is always resolved online, which docs/PRIVACY.md spells out.
+      expect(container.read(settingsProvider).lyricsLookup, isFalse);
 
-    await container.read(settingsProvider.notifier).setLyricsLookup(true);
-    expect(container.read(settingsProvider).lyricsLookup, isTrue);
+      await container.read(settingsProvider.notifier).setLyricsLookup(true);
+      expect(container.read(settingsProvider).lyricsLookup, isTrue);
 
-    // The choice has to survive a restart, or the toggle is decorative.
-    final reopened = ProviderContainer(
-      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-    );
-    addTearDown(reopened.dispose);
-    expect(reopened.read(settingsProvider).lyricsLookup, isTrue);
-  });
+      // The choice has to survive a restart, or the toggle is decorative.
+      final reopened = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+      );
+      addTearDown(reopened.dispose);
+      expect(reopened.read(settingsProvider).lyricsLookup, isTrue);
+    },
+  );
 
   testWidgets('album tiles draw initials when there is no artwork', (
     tester,
@@ -58,18 +62,24 @@ void main() {
     // AlbumTile hands CoverArt an unbounded size. Without a finite fallback the
     // initials were laid out at an infinite font size and never painted.
     await tester.pumpWidget(
-      MaterialApp(
-        theme: LjodTheme.build(),
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 138,
-              height: 186,
-              child: AlbumTile(
-                title: 'Forge',
-                subtitle: 'Veridian Zenith',
-                artworkPath: null,
-                onTap: () {},
+      ProviderScope(
+        overrides: [
+          onlineArtworkServiceProvider.overrideWithValue(_NoArtworkService()),
+        ],
+        child: MaterialApp(
+          theme: LjodTheme.build(),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 138,
+                height: 186,
+                child: AlbumTile(
+                  title: 'Forge',
+                  subtitle: 'Veridian Zenith',
+                  artist: 'Veridian Zenith',
+                  album: 'Forge',
+                  onTap: () {},
+                ),
               ),
             ),
           ),
@@ -95,25 +105,31 @@ void main() {
     // "Unsupported operation: Infinity or NaN toInt".
     const titles = ['Amber', 'Ember', 'Forge', 'Frost', 'Vesper'];
     await tester.pumpWidget(
-      MaterialApp(
-        theme: LjodTheme.build(),
-        home: Scaffold(
-          body: SizedBox(
-            height: 220,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final title in titles)
-                  SizedBox(
-                    width: 138,
-                    child: AlbumTile(
-                      title: title,
-                      subtitle: 'Veridian Zenith',
-                      artworkPath: null,
-                      onTap: () {},
+      ProviderScope(
+        overrides: [
+          onlineArtworkServiceProvider.overrideWithValue(_NoArtworkService()),
+        ],
+        child: MaterialApp(
+          theme: LjodTheme.build(),
+          home: Scaffold(
+            body: SizedBox(
+              height: 220,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final title in titles)
+                    SizedBox(
+                      width: 138,
+                      child: AlbumTile(
+                        title: title,
+                        subtitle: 'Veridian Zenith',
+                        artist: 'Veridian Zenith',
+                        album: title,
+                        onTap: () {},
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -343,4 +359,11 @@ class _SilentAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> disposePlayer() async {}
+}
+
+/// Resolves no covers, so painting a tile in a widget test never touches the
+/// network or the database.
+class _NoArtworkService extends OnlineArtworkService {
+  @override
+  Future<String?> lookup(ArtworkRequest request) async => null;
 }
