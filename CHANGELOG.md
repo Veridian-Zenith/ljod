@@ -48,6 +48,10 @@ All notable changes to Ljod are documented here. The format follows
 
 ### Changed
 
+- Flutter is 3.50.0 (Dart 3.14) for CI and the documented toolchain. The album
+  rail test uses `scrollCacheExtent`, which only exists from 3.50, so the
+  pubspec floor moved with it instead of leaving CI on a version the tests no
+  longer compile against.
 - The Android toolchain is on its current releases: Gradle 9.9.1 (wrapper, both
   distribution checksums updated), AGP 9.5.1 on the new AGP DSL with the legacy
   opt-out removed. Kotlin stays 2.4.21 — the latest stable, since 2.5.0 is only

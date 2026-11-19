@@ -6,7 +6,7 @@ below are what keep it that way.
 ## Setup
 
 ```sh
-flutter --version   # 3.47.9 stable
+flutter --version   # 3.50.0 stable
 flutter pub get
 flutter run
 ```

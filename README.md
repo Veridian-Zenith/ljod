@@ -78,7 +78,7 @@ Full detail in [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Stack
 
-- Flutter 3.47.9 / Dart 3.13+
+- Flutter 3.50.0 / Dart 3.14+
 - `material_ui` 1.9 (`StyleVariant.material3Expressive`)
 - Riverpod 3, `just_audio`, `audio_service`, `sqflite`, `shared_preferences`, `dio`
 - Bundled JetBrains Mono (no runtime font downloads)

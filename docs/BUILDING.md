@@ -4,8 +4,8 @@
 
 | Tool | Version | Notes |
 | --- | --- | --- |
-| Flutter | 3.47.9 (stable) | CI pins this exact version |
-| Dart | 3.13+ | shipped with Flutter 3.47 |
+| Flutter | 3.50.0 (stable) | CI pins this exact version |
+| Dart | 3.14+ | shipped with Flutter 3.50 |
 | JDK | 21 | Gradle, AGP and Kotlin all target 21 |
 | Android SDK | platform 37 | `compileSdk`/`targetSdk` 37, `minSdk` 35 |
 | Gradle | 9.9.1 | provided by the wrapper in `android/` |
@@ -16,7 +16,7 @@ the library scan relies on `MediaStore` and scoped storage.
 ## First run
 
 ```sh
-flutter --version          # expect 3.47.9
+flutter --version          # expect 3.50.0
 flutter pub get
 flutter run                # builds, installs and launches on a device
 ```

@@ -146,7 +146,7 @@ jobs:
       - name: Set up Flutter
         uses: https://github.com/subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.9'
+          flutter-version: '3.50.0'
           channel: stable
           cache: true
 
@@ -183,7 +183,7 @@ jobs:
 
           # The NDK is required, not optional: the `jni` plugin compiles native
           # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
-          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
+          # 3.50.0. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
           "${manager}" --sdk_root="${sdk}" --install \
             "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
             "ndk;28.2.13676358"

@@ -19,7 +19,7 @@ on:
 # warns on every run, expecting capabilities to be granted through
 # Authorized Integrations instead. Declaring it here did nothing.
 env:
-  FLUTTER_VERSION: '3.47.9'
+  FLUTTER_VERSION: '3.50.0'
 
 jobs:
   review:
@@ -82,7 +82,7 @@ jobs:
 
           # The NDK is required, not optional: the `jni` plugin compiles native
           # code with `flutter.ndkVersion`, which is 28.2.13676358 on Flutter
-          # 3.47.9. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
+          # 3.50.0. Without it Gradle pulls ~1 GB from dl.google.com mid-build.
           "${manager}" --sdk_root="${sdk}" --install \
             "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" \
             "ndk;28.2.13676358"
